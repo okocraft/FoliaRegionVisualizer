@@ -1,0 +1,7 @@
+main: net.okocraft.foliaregionvisualizer.FoliaRegionVisualizerPlugin
+name: FoliaRegionVisualizer
+version: ${projectVersion}
+authors: [ "lazy_gon", "Siroshun09" ]
+api-version: 1.20
+depend: [ "BlueMap" ]
+folia-supported: true
