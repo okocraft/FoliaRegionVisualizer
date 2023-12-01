@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     paperweight.foliaDevBundle("$mcVersion-R0.1-SNAPSHOT")
-    compileOnly("com.github.BlueMap-Minecraft:BlueMapAPI:2.6.1")
+    compileOnly("com.github.BlueMap-Minecraft:BlueMapAPI:2.6.2")
 }
 
 java {
