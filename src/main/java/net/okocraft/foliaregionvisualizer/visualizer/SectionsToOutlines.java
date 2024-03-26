@@ -14,13 +14,13 @@ import java.util.Set;
 
 final class SectionsToOutlines {
 
-    static Vector2d[] merge(LongSet sections) {
+    static Vector2d[] merge(LongSet sections, int shift) {
         var res = withHalls(sortLines(toOutline(sections)));
         var result = new Vector2d[res.size()];
 
         for (int i = 0, resSize = res.size(); i < resSize; i++) {
             Line line = res.get(i);
-            result[i] = new Vector2d(line.startX() << 8, line.startZ() << 8);
+            result[i] = new Vector2d(line.startX() << shift, line.startZ() << shift);
         }
 
         return result;
