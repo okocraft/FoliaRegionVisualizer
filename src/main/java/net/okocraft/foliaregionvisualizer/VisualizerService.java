@@ -5,10 +5,9 @@ import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.math.Color;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import net.okocraft.foliaregionvisualizer.util.CraftBukkitUtils;
 import net.okocraft.foliaregionvisualizer.visualizer.CachingVisualizer;
 import org.bukkit.World;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.craftbukkit.CraftWorld;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -16,9 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 
 public class VisualizerService {
-
-    private static final boolean ALWAYS_PRINT_REASON = false;
-    private static boolean reasonPrinted = false;
 
     private final BlueMapAPI api;
     private final String name;
@@ -41,18 +37,7 @@ public class VisualizerService {
     }
 
     public void update(@NotNull World world) {
-        var level = CraftBukkitUtils.getServerLevel(world);
-
-        if (level == null) {
-            if (ALWAYS_PRINT_REASON || !reasonPrinted) {
-                reasonPrinted = true;
-
-                var reason = CraftBukkitUtils.getReasonForNotObtaining(world);
-                JavaPlugin.getPlugin(FoliaRegionVisualizerPlugin.class).getLogger().warning(reason);
-            }
-
-            return;
-        }
+        var level = ((CraftWorld) world).getHandle();
 
         var uid = world.getUID();
 
