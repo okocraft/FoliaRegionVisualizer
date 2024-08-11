@@ -1,6 +1,8 @@
 # Markerset display name in the sidebar of Bluemap's webinterface
 markerset-name: "Folia Regions"
 
+detail-format: "region-%region_id%"
+
 spawn-color: "1e90ff4d"
 
 default-hidden: true

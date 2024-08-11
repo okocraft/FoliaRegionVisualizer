@@ -1,6 +1,7 @@
 package net.okocraft.foliaregionvisualizer.data;
 
 import io.papermc.paper.threadedregions.ThreadedRegionizer;
+import io.papermc.paper.threadedregions.TickRegions;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
@@ -51,19 +52,40 @@ public class RegionInfo {
         return map;
     }
 
-    private static @NotNull RegionInfo createRegionInfo(boolean isSpawn, int shift, @NotNull ThreadedRegionizer.ThreadedRegion<?, ?> region) {
+    private static @NotNull RegionInfo createRegionInfo(boolean isSpawn, int shift, @NotNull ThreadedRegionizer.ThreadedRegion<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> region) {
         var sections = (Long2ReferenceOpenHashMap<?>) SECTION_BY_KEY_HANDLE.get(region);
-        return new RegionInfo(isSpawn, shift, new LongOpenHashSet(sections.keySet()));
+
+        double mspt;
+        int players;
+
+        var data = region.getData();
+        if (data != null) {
+            var report = data.getRegionSchedulingHandle().getTickReport1m(System.nanoTime());
+            mspt = report != null ? report.timePerTickData().segmentAll().average() / 1.0E6 : 0.0;
+
+            var stats = data.getRegionStats();
+            players = stats != null ? stats.getPlayerCount() : 0;
+        } else {
+            mspt = 0.0;
+            players = 0;
+        }
+
+        return new RegionInfo(isSpawn, shift, new LongOpenHashSet(sections.keySet()), mspt, players);
     }
 
     private final boolean isSpawn;
     private final int shift;
     private final LongSet regionSectionKeys;
+    private final double mspt;
+    private final int players;
 
-    private RegionInfo(boolean isSpawn, int shift, @NotNull LongSet regionSectionKeys) {
+    private RegionInfo(boolean isSpawn, int shift, @NotNull LongSet regionSectionKeys,
+                       double mspt, int players) {
         this.isSpawn = isSpawn;
         this.shift = shift;
         this.regionSectionKeys = regionSectionKeys;
+        this.mspt = mspt;
+        this.players = players;
     }
 
     public boolean isSpawn() {
@@ -76,5 +98,13 @@ public class RegionInfo {
 
     public LongSet getRegionSectionKeys() {
         return regionSectionKeys;
+    }
+
+    public double getMspt() {
+        return this.mspt;
+    }
+
+    public int getPlayers() {
+        return this.players;
     }
 }

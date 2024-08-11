@@ -20,18 +20,20 @@ public class VisualizerService {
     private final String name;
     private final boolean defaultHidden;
     private final Set<String> disabledMapNames;
+    private final String detailFormat;
     private final Color spawnColor;
     private final CachingVisualizer.RenderType renderType;
 
     private final Object2ObjectMap<UUID, CachingVisualizer> visualizerMap = new Object2ObjectOpenHashMap<>();
 
     public VisualizerService(@NotNull BlueMapAPI api, @NotNull String name, boolean defaultHidden,
-                             @NotNull Set<String> disabledMapNames, @NotNull Color spawnColor,
+                             @NotNull Set<String> disabledMapNames, @NotNull String detailFormat, @NotNull Color spawnColor,
                              @NotNull CachingVisualizer.RenderType renderType) {
         this.api = api;
         this.name = name;
         this.defaultHidden = defaultHidden;
         this.disabledMapNames = disabledMapNames;
+        this.detailFormat = detailFormat;
         this.spawnColor = spawnColor;
         this.renderType = renderType;
     }
@@ -50,7 +52,7 @@ public class VisualizerService {
                 return;
             }
 
-            visualizer = new CachingVisualizer(uid, markerSet, this.spawnColor, this.renderType);
+            visualizer = new CachingVisualizer(uid, markerSet, this.detailFormat, this.spawnColor, this.renderType);
             this.visualizerMap.put(uid, visualizer);
         }
 

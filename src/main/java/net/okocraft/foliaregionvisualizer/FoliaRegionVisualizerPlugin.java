@@ -42,6 +42,7 @@ public class FoliaRegionVisualizerPlugin extends JavaPlugin {
                 getConfig().getString("markerset-name", "Folia Regions"),
                 getConfig().getBoolean("default-hidden", true),
                 Set.copyOf(getConfig().getStringList("disabled-maps")),
+                getConfig().getString("detail-format", "region-%region_id%"),
                 readSpawnColor(),
                 readRenderType()
         );

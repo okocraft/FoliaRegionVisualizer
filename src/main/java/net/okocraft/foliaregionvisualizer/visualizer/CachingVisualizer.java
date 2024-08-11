@@ -9,6 +9,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.okocraft.foliaregionvisualizer.data.RegionInfo;
 import org.jetbrains.annotations.NotNull;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 public class CachingVisualizer {
@@ -17,12 +19,14 @@ public class CachingVisualizer {
     private final MarkerSet markerSet;
     private final Color spawnColor;
     private final RenderType renderType;
+    private final String detailFormat;
 
-    public CachingVisualizer(@NotNull UUID worldUid, @NotNull MarkerSet markerSet, @NotNull Color spawnColor, @NotNull RenderType renderType) {
+    public CachingVisualizer(@NotNull UUID worldUid, @NotNull MarkerSet markerSet, @NotNull String detailFormat, @NotNull Color spawnColor, @NotNull RenderType renderType) {
         this.worldUid = worldUid;
         this.markerSet = markerSet;
         this.spawnColor = spawnColor;
         this.renderType = renderType;
+        this.detailFormat = detailFormat;
     }
 
     public void update(@NotNull ServerLevel level) {
@@ -35,16 +39,18 @@ public class CachingVisualizer {
 
         for (var entry : map.long2ObjectEntrySet()) {
             long regionId = entry.getLongKey();
-            var markerName = "region-" + regionId;
-
-            count++;
-
             var info = entry.getValue();
 
-            var color = info.isSpawn() ? spawnColor : getColorFromHueCircle(spawnColor, (float) count / regionCount);
-
+            var markerName = "region-" + regionId;
             var sections = info.getRegionSectionKeys();
-            var markerBuilder = createMarkerBuilder(markerName, color);
+            var markerBuilder = createMarkerBuilder(
+                    markerName,
+                    this.detailFormat
+                            .replace("%region_id%", String.valueOf(regionId))
+                            .replace("%region_mspt%", BigDecimal.valueOf(info.getMspt()).setScale(2, RoundingMode.HALF_UP).toPlainString())
+                            .replace("%region_players%", String.valueOf(info.getPlayers())),
+                    info.isSpawn() ? this.spawnColor : getColorFromHueCircle(this.spawnColor, (float) ++count / regionCount)
+            );
 
             switch (this.renderType) {
                 case OUTLINES -> {
@@ -74,10 +80,10 @@ public class CachingVisualizer {
         return "!FoliaRegionVisualizer#" + this.worldUid + ":" + baseName;
     }
 
-    private static @NotNull ShapeMarker.Builder createMarkerBuilder(@NotNull String name, @NotNull Color color) {
+    private static @NotNull ShapeMarker.Builder createMarkerBuilder(@NotNull String name, @NotNull String detail, @NotNull Color color) {
         return ShapeMarker.builder()
                 .label(name)
-                .detail(name)
+                .detail(detail)
                 .lineColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), Math.min(color.getAlpha() + 0.3f, 1.0f)))
                 .fillColor(color)
                 .depthTestEnabled(false);
