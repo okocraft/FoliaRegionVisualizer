@@ -1,5 +1,6 @@
 package net.okocraft.foliaregionvisualizer.visualizer;
 
+import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import de.bluecolored.bluemap.api.math.Color;
@@ -58,7 +59,8 @@ public class CachingVisualizer {
                     unusedMarkers.remove(globalId);
 
                     var points = SectionsToOutlines.merge(sections, info.getShift());
-                    var marker = markerBuilder.shape(new Shape(points), 0).position(points[0].toVector3(0.0));
+                    var pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
+                    var marker = markerBuilder.shape(new Shape(points), 0).position(pos);
                     this.markerSet.getMarkers().put(globalId, marker.build());
                 }
                 case GRIDS -> SectionsToGrids.render(

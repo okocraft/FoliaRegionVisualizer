@@ -1,6 +1,7 @@
 package net.okocraft.foliaregionvisualizer.visualizer;
 
 import com.flowpowered.math.vector.Vector2d;
+import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import de.bluecolored.bluemap.api.math.Shape;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -22,7 +23,8 @@ final class SectionsToGrids {
 
         var name = baseName + "_" + sectionX + "_" + sectionZ;
         var points = toGrid(sectionX, sectionZ, shift);
-        var marker = markerBuilder.label(name).detail(name).shape(new Shape(points), 0f).position(points[0].toVector3(0.0)).build();
+        var pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
+        var marker = markerBuilder.label(name).detail(name).shape(new Shape(points), 0f).position(pos).build();
 
         markerAdder.accept(name, marker);
     }
