@@ -6,7 +6,7 @@ plugins {
 group = "net.okocraft.foliaregionvisualizer"
 version = "1.0"
 
-val mcVersion = "1.21.5"
+val mcVersion = "1.21.6"
 val fullVersion = "${version}-mc${mcVersion}"
 
 repositories {
