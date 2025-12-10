@@ -18,7 +18,7 @@ repositories {
 
 dependencies {
     paperweight.foliaDevBundle("$mcVersion-R0.1-SNAPSHOT")
-    compileOnly("de.bluecolored:bluemap-api:2.7.6")
+    compileOnly("de.bluecolored:bluemap-api:2.7.7")
 }
 
 paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION
