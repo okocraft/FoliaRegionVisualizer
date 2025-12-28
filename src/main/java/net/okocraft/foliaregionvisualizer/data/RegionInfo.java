@@ -31,7 +31,7 @@ public class RegionInfo {
         var map = new Long2ObjectOpenHashMap<RegionInfo>();
         var regionizer = level.regioniser;
 
-        var spawnPos = level.getSharedSpawnPos();
+        var spawnPos = level.levelData.getRespawnData().pos();
         var spawnRegion = regionizer.getRegionAtSynchronised(spawnPos.getX() >> 4, spawnPos.getZ() >> 4);
         long spawnRegionId;
         int shift = 4 + level.regioniser.sectionChunkShift;

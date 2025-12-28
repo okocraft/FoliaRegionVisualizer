@@ -1,12 +1,12 @@
 plugins {
     `java-library`
-    id("io.papermc.paperweight.userdev") version "2.0.0-beta.18"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.19"
 }
 
 group = "net.okocraft.foliaregionvisualizer"
 version = "1.0"
 
-val mcVersion = "1.21.8"
+val mcVersion = "1.21.11"
 val fullVersion = "${version}-mc${mcVersion}"
 
 repositories {
