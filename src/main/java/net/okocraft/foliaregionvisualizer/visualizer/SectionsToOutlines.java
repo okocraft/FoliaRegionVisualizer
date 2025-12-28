@@ -59,7 +59,7 @@ final class SectionsToOutlines {
 
             boolean clockwise = false;
 
-            while (line == null || !line.canConnectTo(closedLine.get(0))) {
+            while (line == null || !line.canConnectTo(closedLine.getFirst())) {
                 if (line == null) {
                     line = lines.stream()
                             .min(Comparator.comparingInt(Line::startX).thenComparingInt(Line::startZ))
@@ -89,17 +89,17 @@ final class SectionsToOutlines {
             closedLines.add(closedLine);
         }
 
-        closedLines.sort(Comparator.<List<Line>>comparingInt(list -> list.get(0).startX())
-                .thenComparingInt(list -> list.get(0).startZ()));
+        closedLines.sort(Comparator.<List<Line>>comparingInt(list -> list.getFirst().startX())
+                .thenComparingInt(list -> list.getFirst().startZ()));
 
         return closedLines;
     }
 
     private static List<Line> withHalls(List<List<Line>> sortedLines) {
-        List<Line> parent = new ArrayList<>(sortedLines.get(0));
+        List<Line> parent = new ArrayList<>(sortedLines.getFirst());
 
         for (List<Line> child : sortedLines.subList(1, sortedLines.size())) {
-            Line firstLine = child.get(0);
+            Line firstLine = child.getFirst();
 
             Optional<Line> optionalUpperLine = parent.stream()
                     .filter(l -> l.startZ() == l.endZ()
@@ -112,7 +112,7 @@ final class SectionsToOutlines {
                 continue;
             }
 
-            Line lastLine = child.get(child.size() - 1);
+            Line lastLine = child.getLast();
             Line upperLine = optionalUpperLine.get();
 
             if (upperLine.startX() < upperLine.endX()) {
@@ -129,8 +129,8 @@ final class SectionsToOutlines {
 
                 } else if (upperLine.startX() == lastLine.endX()) {
                     int idx = parent.indexOf(upperLine);
-                    child.add(child.remove(0));
-                    parent.get((idx - 1 + parent.size()) % parent.size()).endZ(child.get(0).endZ());
+                    child.add(child.removeFirst());
+                    parent.get((idx - 1 + parent.size()) % parent.size()).endZ(child.getFirst().endZ());
                     firstLine.endZ(upperLine.startZ());
                     parent.addAll(idx, child);
 
@@ -161,7 +161,7 @@ final class SectionsToOutlines {
 
                 } else if (upperLine.endX() == firstLine.startX()) {
                     int idx = (parent.indexOf(upperLine) + 1) % parent.size();
-                    child.add(0, child.remove(child.size() - 1));
+                    child.addFirst(child.removeLast());
                     parent.get(idx).startZ(lastLine.startZ());
                     lastLine.startZ(upperLine.endZ());
                     parent.addAll(idx, child);
