@@ -1,16 +1,20 @@
 package net.okocraft.foliaregionvisualizer;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import de.bluecolored.bluemap.api.BlueMapMap;
+import de.bluecolored.bluemap.api.BlueMapWorld;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.math.Color;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import net.minecraft.server.level.ServerLevel;
 import net.okocraft.foliaregionvisualizer.visualizer.CachingVisualizer;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -39,14 +43,14 @@ public class VisualizerService {
     }
 
     public void update(@NotNull World world) {
-        var level = ((CraftWorld) world).getHandle();
+        ServerLevel level = ((CraftWorld) world).getHandle();
 
-        var uid = world.getUID();
+        UUID uid = world.getUID();
 
-        var visualizer = this.visualizerMap.get(uid);
+        CachingVisualizer visualizer = this.visualizerMap.get(uid);
 
         if (visualizer == null) {
-            var markerSet = createMarkerSet(uid);
+            MarkerSet markerSet = createMarkerSet(uid);
 
             if (markerSet == null) {
                 return;
@@ -60,32 +64,32 @@ public class VisualizerService {
     }
 
     public void clear() {
-        for (var entry : visualizerMap.object2ObjectEntrySet()) {
-            var world = this.api.getWorld(entry.getKey());
+        for (Object2ObjectMap.Entry<UUID, CachingVisualizer> entry : visualizerMap.object2ObjectEntrySet()) {
+            Optional<BlueMapWorld> world = this.api.getWorld(entry.getKey());
 
             if (world.isEmpty()) {
                 continue;
             }
 
-            var id = "FoliaRegionVisualizer-" + entry.getKey();
+            String id = "FoliaRegionVisualizer-" + entry.getKey();
 
-            for (var map : world.get().getMaps()) {
+            for (BlueMapMap map : world.get().getMaps()) {
                 map.getMarkerSets().remove(id);
             }
         }
     }
 
     private @Nullable MarkerSet createMarkerSet(@NotNull UUID worldUid) {
-        var world = this.api.getWorld(worldUid);
+        Optional<BlueMapWorld> world = this.api.getWorld(worldUid);
 
         if (world.isEmpty()) {
             return null;
         }
 
         MarkerSet markerSet = null;
-        var id = "FoliaRegionVisualizer-" + worldUid;
+        String id = "FoliaRegionVisualizer-" + worldUid;
 
-        for (var map : world.get().getMaps()) {
+        for (BlueMapMap map : world.get().getMaps()) {
             if (this.disabledMapNames.contains(map.getId())) {
                 continue;
             }

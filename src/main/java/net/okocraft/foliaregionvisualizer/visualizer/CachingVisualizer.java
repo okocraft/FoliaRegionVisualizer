@@ -1,10 +1,13 @@
 package net.okocraft.foliaregionvisualizer.visualizer;
 
+import com.flowpowered.math.vector.Vector2d;
 import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import de.bluecolored.bluemap.api.math.Color;
 import de.bluecolored.bluemap.api.math.Shape;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.server.level.ServerLevel;
 import net.okocraft.foliaregionvisualizer.data.RegionInfo;
@@ -31,20 +34,20 @@ public class CachingVisualizer {
     }
 
     public void update(@NotNull ServerLevel level) {
-        var map = RegionInfo.collectFrom(level);
+        Long2ObjectMap<RegionInfo> map = RegionInfo.collectFrom(level);
 
-        var unusedMarkers = new ObjectOpenHashSet<>(this.markerSet.getMarkers().keySet());
+        ObjectOpenHashSet<String> unusedMarkers = new ObjectOpenHashSet<>(this.markerSet.getMarkers().keySet());
 
         int count = 0;
         int regionCount = map.size() + 1;
 
-        for (var entry : map.long2ObjectEntrySet()) {
+        for (Long2ObjectMap.Entry<RegionInfo> entry : map.long2ObjectEntrySet()) {
             long regionId = entry.getLongKey();
-            var info = entry.getValue();
+            RegionInfo info = entry.getValue();
 
-            var markerName = "region-" + regionId;
-            var sections = info.getRegionSectionKeys();
-            var markerBuilder = createMarkerBuilder(
+            String markerName = "region-" + regionId;
+            LongSet sections = info.getRegionSectionKeys();
+            ShapeMarker.Builder markerBuilder = createMarkerBuilder(
                     markerName,
                     this.detailFormat
                             .replace("%region_id%", String.valueOf(regionId))
@@ -55,18 +58,18 @@ public class CachingVisualizer {
 
             switch (this.renderType) {
                 case OUTLINES -> {
-                    var globalId = createGlobalId(markerName);
+                    String globalId = createGlobalId(markerName);
                     unusedMarkers.remove(globalId);
 
-                    var points = SectionsToOutlines.merge(sections, info.getShift());
-                    var pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
-                    var marker = markerBuilder.shape(new Shape(points), 0).position(pos);
+                    Vector2d[] points = SectionsToOutlines.merge(sections, info.getShift());
+                    Vector3d pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
+                    ShapeMarker.Builder marker = markerBuilder.shape(new Shape(points), 0).position(pos);
                     this.markerSet.getMarkers().put(globalId, marker.build());
                 }
                 case GRIDS -> SectionsToGrids.render(
                         sections, markerName, info.getShift(), markerBuilder,
                         (name, marker) -> {
-                            var globalId = createGlobalId(name);
+                            String globalId = createGlobalId(name);
                             this.markerSet.getMarkers().put(globalId, marker);
                             unusedMarkers.remove(globalId);
                         }

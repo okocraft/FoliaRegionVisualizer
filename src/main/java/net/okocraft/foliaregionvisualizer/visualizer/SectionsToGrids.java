@@ -21,10 +21,10 @@ final class SectionsToGrids {
         int sectionX = SectionUtils.getSectionX(sectionKey);
         int sectionZ = SectionUtils.getSectionZ(sectionKey);
 
-        var name = baseName + "_" + sectionX + "_" + sectionZ;
-        var points = toGrid(sectionX, sectionZ, shift);
-        var pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
-        var marker = markerBuilder.label(name).detail(name).shape(new Shape(points), 0f).position(pos).build();
+        String name = baseName + "_" + sectionX + "_" + sectionZ;
+        Vector2d[] points = toGrid(sectionX, sectionZ, shift);
+        Vector3d pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
+        ShapeMarker marker = markerBuilder.label(name).detail(name).shape(new Shape(points), 0f).position(pos).build();
 
         markerAdder.accept(name, marker);
     }

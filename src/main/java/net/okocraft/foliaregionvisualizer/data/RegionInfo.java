@@ -1,5 +1,6 @@
 package net.okocraft.foliaregionvisualizer.data;
 
+import ca.spottedleaf.moonrise.common.time.TickData;
 import io.papermc.paper.threadedregions.ThreadedRegionizer;
 import io.papermc.paper.threadedregions.TickRegions;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -7,11 +8,13 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.lang.reflect.Field;
 
 public class RegionInfo {
 
@@ -19,8 +22,8 @@ public class RegionInfo {
 
     static {
         try {
-            var threadedRegionClass = ThreadedRegionizer.ThreadedRegion.class;
-            var sectionByKeyField = threadedRegionClass.getDeclaredField("sectionByKey");
+            Class<ThreadedRegionizer.ThreadedRegion> threadedRegionClass = ThreadedRegionizer.ThreadedRegion.class;
+            Field sectionByKeyField = threadedRegionClass.getDeclaredField("sectionByKey");
             SECTION_BY_KEY_HANDLE = MethodHandles.privateLookupIn(threadedRegionClass, MethodHandles.lookup()).unreflectVarHandle(sectionByKeyField);
         } catch (IllegalAccessException | NoSuchFieldException e) {
             throw new ExceptionInInitializerError(e);
@@ -28,11 +31,11 @@ public class RegionInfo {
     }
 
     public static @NotNull Long2ObjectMap<RegionInfo> collectFrom(@NotNull ServerLevel level) {
-        var map = new Long2ObjectOpenHashMap<RegionInfo>();
-        var regionizer = level.regioniser;
+        Long2ObjectOpenHashMap<RegionInfo> map = new Long2ObjectOpenHashMap<RegionInfo>();
+        ThreadedRegionizer<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> regionizer = level.regioniser;
 
-        var spawnPos = level.levelData.getRespawnData().pos();
-        var spawnRegion = regionizer.getRegionAtSynchronised(spawnPos.getX() >> 4, spawnPos.getZ() >> 4);
+        BlockPos spawnPos = level.levelData.getRespawnData().pos();
+        ThreadedRegionizer.ThreadedRegion<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> spawnRegion = regionizer.getRegionAtSynchronised(spawnPos.getX() >> 4, spawnPos.getZ() >> 4);
         long spawnRegionId;
         int shift = 4 + level.regioniser.sectionChunkShift;
 
@@ -53,17 +56,17 @@ public class RegionInfo {
     }
 
     private static @NotNull RegionInfo createRegionInfo(boolean isSpawn, int shift, @NotNull ThreadedRegionizer.ThreadedRegion<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> region) {
-        var sections = (Long2ReferenceOpenHashMap<?>) SECTION_BY_KEY_HANDLE.get(region);
+        Long2ReferenceOpenHashMap<?> sections = (Long2ReferenceOpenHashMap<?>) SECTION_BY_KEY_HANDLE.get(region);
 
         double mspt;
         int players;
 
-        var data = region.getData();
+        TickRegions.TickRegionData data = region.getData();
         if (data != null) {
-            var report = data.getRegionSchedulingHandle().getTickReport1m(System.nanoTime());
+            TickData.TickReportData report = data.getRegionSchedulingHandle().getTickReport1m(System.nanoTime());
             mspt = report != null ? report.timePerTickData().segmentAll().average() / 1.0E6 : 0.0;
 
-            var stats = data.getRegionStats();
+            TickRegions.RegionStats stats = data.getRegionStats();
             players = stats != null ? stats.getPlayerCount() : 0;
         } else {
             mspt = 0.0;

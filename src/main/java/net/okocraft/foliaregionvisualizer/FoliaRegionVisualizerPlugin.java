@@ -63,13 +63,13 @@ public class FoliaRegionVisualizerPlugin extends JavaPlugin {
     }
 
     private Color readSpawnColor() {
-        var rgbaRegex = Pattern.compile("[0-9a-f]{8}");
-        var rgb = getConfig().getString("spawn-color", "");
+        Pattern rgbaRegex = Pattern.compile("[0-9a-f]{8}");
+        String rgb = getConfig().getString("spawn-color", "");
         return rgbaRegex.matcher(rgb).matches() ? new Color("#" + rgb) : new Color("#1e90ff1a");
     }
 
     private CachingVisualizer.RenderType readRenderType() {
-        var value = getConfig().getString("render-type", "");
+        String value = getConfig().getString("render-type", "");
 
         if (value.equalsIgnoreCase("grid")) {
             return CachingVisualizer.RenderType.GRIDS;

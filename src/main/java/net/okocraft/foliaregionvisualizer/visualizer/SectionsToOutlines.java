@@ -15,8 +15,8 @@ import java.util.Set;
 final class SectionsToOutlines {
 
     static Vector2d[] merge(LongSet sections, int shift) {
-        var res = withHalls(sortLines(toOutline(sections)));
-        var result = new Vector2d[res.size()];
+        List<Line> res = withHalls(sortLines(toOutline(sections)));
+        Vector2d[] result = new Vector2d[res.size()];
 
         for (int i = 0, resSize = res.size(); i < resSize; i++) {
             Line line = res.get(i);
@@ -28,7 +28,7 @@ final class SectionsToOutlines {
 
     private static ObjectSet<Line> toOutline(LongSet sections) {
         ObjectSet<Line> res = new ObjectOpenHashSet<>();
-        var mutableLine = new Line();
+        Line mutableLine = new Line();
 
         sections.forEach(sectionKey -> {
             int x1 = SectionUtils.getSectionX(sectionKey);
