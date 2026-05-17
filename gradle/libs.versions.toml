@@ -1,0 +1,15 @@
+[versions]
+
+bluemap = "2.7.7"
+folia = "26.1.2.build.8-stable"
+
+[libraries]
+
+bluemap-api = { module = "de.bluecolored:bluemap-api", version.ref = "bluemap" }
+
+# Not used in the project but declared here for Renovate
+folia-api = { module = "dev.folia:folia-api", version.ref = "folia" }
+
+[plugins]
+
+paperweight-userdev = { id = "io.papermc.paperweight.userdev", version = "2.0.0-beta.21" }

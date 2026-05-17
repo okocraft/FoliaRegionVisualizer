@@ -1,12 +1,12 @@
 plugins {
     `java-library`
-    id("io.papermc.paperweight.userdev") version "2.0.0-beta.21"
+    alias(libs.plugins.paperweight.userdev)
 }
 
 group = "net.okocraft.foliaregionvisualizer"
 version = "1.0"
 
-val mcVersion = "1.21.11"
+val mcVersion = libs.versions.folia.get().replaceAfter(".build", "").removeSuffix(".build")
 val fullVersion = "${version}-mc${mcVersion}"
 
 repositories {
@@ -17,11 +17,9 @@ repositories {
 }
 
 dependencies {
-    paperweight.foliaDevBundle("$mcVersion-R0.1-SNAPSHOT")
-    compileOnly("de.bluecolored:bluemap-api:2.7.7")
+    paperweight.foliaDevBundle(libs.versions.folia.get())
+    compileOnly(libs.bluemap.api)
 }
-
-paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25
