@@ -8,6 +8,7 @@ import de.bluecolored.bluemap.api.math.Color;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.minecraft.server.level.ServerLevel;
+import net.okocraft.foliaregionvisualizer.util.BlueMapWorldId;
 import net.okocraft.foliaregionvisualizer.visualizer.CachingVisualizer;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftWorld;
@@ -50,7 +51,13 @@ public class VisualizerService {
         CachingVisualizer visualizer = this.visualizerMap.get(uid);
 
         if (visualizer == null) {
-            MarkerSet markerSet = createMarkerSet(uid);
+            Optional<BlueMapWorld> blueMapWorld = this.api.getWorld(uid).or(() -> this.api.getWorld(BlueMapWorldId.create(world.getWorldPath(), world.getEnvironment())));
+
+            if (blueMapWorld.isEmpty()) {
+                return;
+            }
+
+            MarkerSet markerSet = createMarkerSet(blueMapWorld.get(), uid);
 
             if (markerSet == null) {
                 return;
@@ -79,17 +86,11 @@ public class VisualizerService {
         }
     }
 
-    private @Nullable MarkerSet createMarkerSet(@NotNull UUID worldUid) {
-        Optional<BlueMapWorld> world = this.api.getWorld(worldUid);
-
-        if (world.isEmpty()) {
-            return null;
-        }
-
+    private @Nullable MarkerSet createMarkerSet(@NotNull BlueMapWorld world, @NotNull UUID worldUid) {
         MarkerSet markerSet = null;
         String id = "FoliaRegionVisualizer-" + worldUid;
 
-        for (BlueMapMap map : world.get().getMaps()) {
+        for (BlueMapMap map : world.getMaps()) {
             if (this.disabledMapNames.contains(map.getId())) {
                 continue;
             }
