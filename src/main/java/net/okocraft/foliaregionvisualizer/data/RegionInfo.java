@@ -1,6 +1,6 @@
 package net.okocraft.foliaregionvisualizer.data;
 
-import ca.spottedleaf.moonrise.common.time.TickData;
+import ca.spottedleaf.common.time.TickData;
 import io.papermc.paper.threadedregions.ThreadedRegionizer;
 import io.papermc.paper.threadedregions.TickRegions;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -34,7 +34,7 @@ public class RegionInfo {
         Long2ObjectOpenHashMap<RegionInfo> map = new Long2ObjectOpenHashMap<RegionInfo>();
         ThreadedRegionizer<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> regionizer = level.regioniser;
 
-        BlockPos spawnPos = level.levelData.getRespawnData().pos();
+        BlockPos spawnPos = level.getLevelData().getRespawnData().pos();
         ThreadedRegionizer.ThreadedRegion<TickRegions.TickRegionData, TickRegions.TickRegionSectionData> spawnRegion = regionizer.getRegionAtSynchronised(spawnPos.getX() >> 4, spawnPos.getZ() >> 4);
         long spawnRegionId;
         int shift = 4 + level.regioniser.sectionChunkShift;

@@ -1,7 +1,7 @@
 [versions]
 
 bluemap = "2.8.0"
-folia = "26.1.2.build.8-stable"
+folia = "26.2.build.7-beta"
 
 [libraries]
 
