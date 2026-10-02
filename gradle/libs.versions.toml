@@ -12,4 +12,4 @@ folia-api = { module = "dev.folia:folia-api", version.ref = "folia" }
 
 [plugins]
 
-paperweight-userdev = { id = "io.papermc.paperweight.userdev", version = "2.0.0-beta.23" }
+paperweight-userdev = { id = "io.papermc.paperweight.userdev", version = "2.0.0-beta.24" }
