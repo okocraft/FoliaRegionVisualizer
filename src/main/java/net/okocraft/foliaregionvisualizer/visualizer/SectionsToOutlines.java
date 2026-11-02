@@ -1,41 +1,62 @@
 package net.okocraft.foliaregionvisualizer.visualizer;
 
 import com.flowpowered.math.vector.Vector2d;
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ObjectSet;
 import net.okocraft.foliaregionvisualizer.util.SectionUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 
 final class SectionsToOutlines {
 
+    // Directions of boundary edges, in counterclockwise order on the (x, z) plane.
+    private static final int PLUS_X = 0;
+    private static final int PLUS_Z = 1;
+    private static final int MINUS_X = 2;
+    private static final int MINUS_Z = 3;
+    private static final int[] DX = {1, 0, -1, 0};
+    private static final int[] DZ = {0, 1, 0, -1};
+
     /**
-     * Converts sections into outline polygons, one for each 8-connected component of the sections.
+     * Converts sections into outlines, one for each 8-connected component of the sections.
      * <p>
      * Two sections are connected when their Chebyshev distance is 1. A Folia region is not always 8-connected
-     * (e.g. with a grid exponent of 2 or less), so each component is outlined separately. The components are ordered by
-     * their smallest section (X first, then Z).
+     * (e.g. with a grid exponent of 2 or less), so each component is outlined separately. The outlines are ordered by
+     * the smallest section (X first, then Z) of their component.
+     * <p>
+     * Each outline consists of the outer boundary and the boundaries of its holes, so that they can be passed to
+     * BlueMap's {@code ShapeMarker} as the shape and its holes. Every edge of every ring lies on the boundary of the
+     * sections; no edge crosses the inside or the outside of the sections.
      *
      * @param sections the section keys
      * @param shift    the shift to convert section coordinates to block coordinates
-     * @return the outline polygons, or an empty list if {@code sections} is empty
+     * @return the outlines, or an empty list if {@code sections} is empty
      */
-    static List<Vector2d[]> merge(LongSet sections, int shift) {
+    static List<Outline> merge(LongSet sections, int shift) {
         List<LongSet> components = splitIntoConnectedComponents(sections);
-        List<Vector2d[]> result = new ArrayList<>(components.size());
+        List<Outline> result = new ArrayList<>(components.size());
 
         for (LongSet component : components) {
-            result.add(mergeConnected(component, shift));
+            result.add(outline(component, shift));
         }
 
         return result;
+    }
+
+    /**
+     * The outline of an 8-connected component.
+     *
+     * @param shape the outer boundary
+     * @param holes the boundaries of the holes, ordered by their smallest vertex (X first, then Z)
+     */
+    record Outline(Vector2d[] shape, List<Vector2d[]> holes) {
     }
 
     private static List<LongSet> splitIntoConnectedComponents(LongSet sections) {
@@ -90,291 +111,171 @@ final class SectionsToOutlines {
     }
 
     /**
-     * Converts non-empty, 8-connected sections into one outline polygon. Holes are joined to the outer boundary by
-     * zero-width bridges.
+     * Traces the boundary of non-empty, 8-connected sections.
+     * <p>
+     * Every section contributes its four edges counterclockwise (the section is on the left of each edge), and edges
+     * shared by two sections cancel out. The remaining edges form closed rings: the outer boundary is counterclockwise
+     * (positive area) and every hole is clockwise (negative area).
+     * <p>
+     * At a vertex where two sections touch only diagonally, two rings meet. Taking the right turn there keeps the two
+     * diagonal sections in the same ring, which matches the 8-connectivity of the sections (and the 4-connectivity of the
+     * empty space), so that a component has exactly one outer ring.
      */
-    private static Vector2d[] mergeConnected(LongSet sections, int shift) {
-        List<Line> res = withHalls(sortLines(toOutline(sections)));
-        Vector2d[] result = new Vector2d[res.size()];
-
-        for (int i = 0, resSize = res.size(); i < resSize; i++) {
-            Line line = res.get(i);
-            result[i] = new Vector2d(line.startX() << shift, line.startZ() << shift);
-        }
-
-        return result;
-    }
-
-    private static ObjectSet<Line> toOutline(LongSet sections) {
-        ObjectSet<Line> res = new ObjectOpenHashSet<>();
-        Line mutableLine = new Line();
+    private static Outline outline(LongSet sections, int shift) {
+        Long2IntMap outgoing = new Long2IntOpenHashMap();
 
         sections.forEach(sectionKey -> {
-            int x1 = SectionUtils.getSectionX(sectionKey);
-            int z1 = SectionUtils.getSectionZ(sectionKey);
-            int x2 = x1 + 1;
-            int z2 = z1 + 1;
-
-            mutableLine.set(x2, z1, x1, z1);
-            if (!res.remove(mutableLine)) res.add(mutableLine.createReversed());
-            mutableLine.set(x2, z2, x2, z1);
-            if (!res.remove(mutableLine)) res.add(mutableLine.createReversed());
-            mutableLine.set(x1, z2, x2, z2);
-            if (!res.remove(mutableLine)) res.add(mutableLine.createReversed());
-            mutableLine.set(x1, z1, x1, z2);
-            if (!res.remove(mutableLine)) res.add(mutableLine.createReversed());
+            int x = SectionUtils.getSectionX(sectionKey);
+            int z = SectionUtils.getSectionZ(sectionKey);
+            addEdge(outgoing, x, z, PLUS_X);
+            addEdge(outgoing, x + 1, z, PLUS_Z);
+            addEdge(outgoing, x + 1, z + 1, MINUS_X);
+            addEdge(outgoing, x, z + 1, MINUS_Z);
         });
 
-        return res;
-    }
+        Long2IntMap allOutgoing = new Long2IntOpenHashMap(outgoing);
+        Vector2d[] shape = null;
+        List<LongList> holes = new ArrayList<>();
 
-    private static List<List<Line>> sortLines(Set<Line> lines) {
-        List<List<Line>> closedLines = new ArrayList<>();
+        while (!outgoing.isEmpty()) {
+            LongList ring = traceRing(outgoing, allOutgoing);
 
-        while (!lines.isEmpty()) {
-            List<Line> closedLine = new ArrayList<>();
-
-            Line line = null;
-
-            boolean clockwise = false;
-
-            while (line == null || !line.canConnectTo(closedLine.getFirst())) {
-                if (line == null) {
-                    line = lines.stream()
-                            .min(Comparator.comparingInt(Line::startX).thenComparingInt(Line::startZ))
-                            .orElseThrow();
-
-                    if (line.startZ() == line.endZ()) {
-                        clockwise = true;
-                    }
-                } else {
-                    Line next = line.createNext();
-                    boolean rotateClockwise = clockwise != lines.contains(next.createReversed());
-                    line = next.createRotated(rotateClockwise);
-
-                    if (!lines.contains(line)) {
-                        line = next.createRotated(!rotateClockwise);
-                    }
+            if (signedDoubleArea(ring) > 0) {
+                if (shape != null) {
+                    throw new IllegalStateException("8-connected sections must have exactly one outer boundary");
                 }
-
-                closedLine.add(line);
-                lines.remove(line);
-
-                for (Line next = line.createNext(); lines.remove(next); next = line.createNext()) {
-                    line.connect(next);
-                }
-            }
-
-            closedLines.add(closedLine);
-        }
-
-        closedLines.sort(Comparator.<List<Line>>comparingInt(list -> list.getFirst().startX())
-                .thenComparingInt(list -> list.getFirst().startZ()));
-
-        return closedLines;
-    }
-
-    private static List<Line> withHalls(List<List<Line>> sortedLines) {
-        List<Line> parent = new ArrayList<>(sortedLines.getFirst());
-
-        for (List<Line> child : sortedLines.subList(1, sortedLines.size())) {
-            Line firstLine = child.getFirst();
-
-            Optional<Line> optionalUpperLine = parent.stream()
-                    .filter(l -> l.startZ() == l.endZ()
-                            && (l.startX() <= firstLine.startX() && firstLine.startX() <= l.endX()
-                            || l.endX() <= firstLine.startX() && firstLine.startX() <= l.startX())
-                            && l.startZ() <= firstLine.startZ())
-                    .max(Comparator.comparingInt(Line::startZ));
-
-            if (optionalUpperLine.isEmpty()) {
-                continue;
-            }
-
-            Line lastLine = child.getLast();
-            Line upperLine = optionalUpperLine.get();
-
-            if (upperLine.startX() < upperLine.endX()) {
-
-                if (upperLine.startX() < lastLine.endX() && lastLine.endX() < upperLine.endX()) {
-                    Line secondHalf = upperLine.divide(lastLine.endX(), upperLine.startZ());
-                    Line out = firstLine.createCopy().endZ(secondHalf.endZ());
-                    firstLine.startZ(upperLine.endZ());
-
-                    int idx = parent.indexOf(upperLine) + 1;
-                    parent.add(idx, secondHalf);
-                    parent.add(idx, out);
-                    parent.addAll(idx, child);
-
-                } else if (upperLine.startX() == lastLine.endX()) {
-                    int idx = parent.indexOf(upperLine);
-                    child.add(child.removeFirst());
-                    parent.get((idx - 1 + parent.size()) % parent.size()).endZ(child.getFirst().endZ());
-                    firstLine.endZ(upperLine.startZ());
-                    parent.addAll(idx, child);
-
-                } else if (upperLine.endX() == lastLine.endX()) {
-                    int idx = (parent.indexOf(upperLine) + 1) % parent.size();
-                    parent.get(idx).startZ(lastLine.endZ());
-                    firstLine.startZ(upperLine.endZ());
-                    parent.addAll(idx, child);
-                }
-
+                shape = toVectors(ring, shift);
             } else {
-
-                if (upperLine.endX() < firstLine.startX() && firstLine.startX() < upperLine.startX()) {
-                    Line secondHalf = upperLine.divide(firstLine.startX(), upperLine.startZ());
-                    Line in = secondHalf.createCopy().endX(firstLine.startX()).endZ(firstLine.startZ());
-                    lastLine.endZ(upperLine.endZ());
-
-                    int idx = parent.indexOf(upperLine) + 1;
-                    parent.add(idx, secondHalf);
-                    parent.addAll(idx, child);
-                    parent.add(idx, in);
-
-                } else if (upperLine.startX() == firstLine.startX()) {
-                    int idx = parent.indexOf(upperLine);
-                    parent.get((idx - 1 + parent.size()) % parent.size()).endZ(firstLine.startZ());
-                    lastLine.endZ(upperLine.startZ());
-                    parent.addAll(idx, child);
-
-                } else if (upperLine.endX() == firstLine.startX()) {
-                    int idx = (parent.indexOf(upperLine) + 1) % parent.size();
-                    child.addFirst(child.removeLast());
-                    parent.get(idx).startZ(lastLine.startZ());
-                    lastLine.startZ(upperLine.endZ());
-                    parent.addAll(idx, child);
-                }
+                holes.add(ring);
             }
         }
 
-        return parent;
+        if (shape == null) {
+            throw new IllegalStateException("8-connected sections must have exactly one outer boundary");
+        }
+
+        holes.sort(Comparator.comparingInt((LongList ring) -> SectionUtils.getSectionX(ring.getLong(0)))
+                .thenComparingInt(ring -> SectionUtils.getSectionZ(ring.getLong(0))));
+
+        List<Vector2d[]> holeVectors = new ArrayList<>(holes.size());
+        for (LongList hole : holes) {
+            holeVectors.add(toVectors(hole, shift));
+        }
+
+        return new Outline(shape, holeVectors);
+    }
+
+    private static void addEdge(Long2IntMap outgoing, int x, int z, int direction) {
+        long reverseStart = SectionUtils.getSectionKey(x + DX[direction], z + DZ[direction]);
+        int reverseBit = 1 << ((direction + 2) & 3);
+        int reverseMask = outgoing.get(reverseStart);
+
+        if ((reverseMask & reverseBit) != 0) {
+            // The edge is shared with an adjacent section, so it is not on the boundary.
+            if (reverseMask == reverseBit) {
+                outgoing.remove(reverseStart);
+            } else {
+                outgoing.put(reverseStart, reverseMask & ~reverseBit);
+            }
+        } else {
+            long start = SectionUtils.getSectionKey(x, z);
+            outgoing.put(start, outgoing.get(start) | (1 << direction));
+        }
+    }
+
+    /**
+     * Removes one ring from {@code outgoing} and returns its corners, starting from the smallest corner (X first, then Z).
+     */
+    private static LongList traceRing(Long2IntMap outgoing, Long2IntMap allOutgoing) {
+        Long2IntMap.Entry first = outgoing.long2IntEntrySet().iterator().next();
+        long startVertex = first.getLongKey();
+        int startDirection = Integer.numberOfTrailingZeros(first.getIntValue());
+
+        LongList corners = new LongArrayList();
+        long vertex = startVertex;
+        int direction = startDirection;
+
+        do {
+            removeEdge(outgoing, vertex, direction);
+            int x = SectionUtils.getSectionX(vertex) + DX[direction];
+            int z = SectionUtils.getSectionZ(vertex) + DZ[direction];
+            vertex = SectionUtils.getSectionKey(x, z);
+
+            int next = nextDirection(allOutgoing.get(vertex), direction);
+            if (next != direction) {
+                corners.add(vertex);
+            }
+            direction = next;
+        } while (vertex != startVertex || direction != startDirection);
+
+        int smallest = 0;
+        for (int i = 1; i < corners.size(); i++) {
+            if (isSmaller(corners.getLong(i), corners.getLong(smallest))) {
+                smallest = i;
+            }
+        }
+
+        LongList rotated = new LongArrayList(corners.size());
+        rotated.addAll(corners.subList(smallest, corners.size()));
+        rotated.addAll(corners.subList(0, smallest));
+        return rotated;
+    }
+
+    private static void removeEdge(Long2IntMap outgoing, long vertex, int direction) {
+        int mask = outgoing.get(vertex) & ~(1 << direction);
+        if (mask == 0) {
+            outgoing.remove(vertex);
+        } else {
+            outgoing.put(vertex, mask);
+        }
+    }
+
+    /**
+     * Chooses the outgoing edge after arriving in {@code incoming} direction: right turn, straight, then left turn.
+     * Only a vertex where sections touch diagonally has two outgoing edges, and there the right turn is taken.
+     */
+    private static int nextDirection(int outgoingMask, int incoming) {
+        int right = (incoming + 3) & 3;
+        if ((outgoingMask & (1 << right)) != 0) {
+            return right;
+        }
+        if ((outgoingMask & (1 << incoming)) != 0) {
+            return incoming;
+        }
+        int left = (incoming + 1) & 3;
+        if ((outgoingMask & (1 << left)) != 0) {
+            return left;
+        }
+        throw new IllegalStateException("The boundary is not closed");
+    }
+
+    private static boolean isSmaller(long vertex, long other) {
+        int x = SectionUtils.getSectionX(vertex);
+        int otherX = SectionUtils.getSectionX(other);
+        return x < otherX || x == otherX && SectionUtils.getSectionZ(vertex) < SectionUtils.getSectionZ(other);
+    }
+
+    private static long signedDoubleArea(LongList ring) {
+        long area = 0;
+        for (int i = 0, size = ring.size(); i < size; i++) {
+            long a = ring.getLong(i);
+            long b = ring.getLong((i + 1) % size);
+            area += (long) SectionUtils.getSectionX(a) * SectionUtils.getSectionZ(b)
+                    - (long) SectionUtils.getSectionX(b) * SectionUtils.getSectionZ(a);
+        }
+        return area;
+    }
+
+    private static Vector2d[] toVectors(LongList ring, int shift) {
+        Vector2d[] result = new Vector2d[ring.size()];
+        for (int i = 0; i < result.length; i++) {
+            long vertex = ring.getLong(i);
+            result[i] = new Vector2d(SectionUtils.getSectionX(vertex) << shift, SectionUtils.getSectionZ(vertex) << shift);
+        }
+        return result;
     }
 
     private SectionsToOutlines() {
         throw new UnsupportedOperationException();
-    }
-
-    private static class Line {
-
-        private int startX, startZ, endX, endZ;
-
-        Line() {
-        }
-
-        Line(int startX, int startZ, int endX, int endZ) {
-            this.startX = startX;
-            this.startZ = startZ;
-            this.endX = endX;
-            this.endZ = endZ;
-        }
-
-        public int startX() {
-            return startX;
-        }
-
-        public int startZ() {
-            return startZ;
-        }
-
-        public void startZ(int startZ) {
-            this.startZ = startZ;
-        }
-
-        public int endX() {
-            return endX;
-        }
-
-        public Line endX(int endX) {
-            this.endX = endX;
-            return this;
-        }
-
-        public int endZ() {
-            return endZ;
-        }
-
-        public Line endZ(int endZ) {
-            this.endZ = endZ;
-            return this;
-        }
-
-        public void set(int startX, int startZ, int endX, int endZ) {
-            this.startX = startX;
-            this.startZ = startZ;
-            this.endX = endX;
-            this.endZ = endZ;
-        }
-
-        public boolean canConnectTo(Line other) {
-            return other.startX == this.endX && other.startZ == this.endZ;
-        }
-
-        public void connect(Line other) {
-            this.endX = other.endX;
-            this.endZ = other.endZ;
-        }
-
-        public Line createReversed() {
-            return new Line(endX, endZ, startX, startZ);
-        }
-
-        public Line createNext() {
-            int newEndX = endX;
-            int newEndZ = endZ;
-
-            if (endX > startX) {
-                newEndX += 1;
-            } else if (endX < startX) {
-                newEndX -= 1;
-            }
-
-            if (endZ > startZ) {
-                newEndZ += 1;
-            } else if (endZ < startZ) {
-                newEndZ -= 1;
-            }
-
-            return new Line(endX, endZ, newEndX, newEndZ);
-        }
-
-        public Line createCopy() {
-            return new Line(startX, startZ, endX, endZ);
-        }
-
-        public Line createRotated(boolean outline) {
-            return outline
-                    ? new Line(startX, startZ, startX - (endZ - startZ), startZ + (endX - startX)) // clockwise
-                    : new Line(startX, startZ, startX + (endZ - startZ), startZ - (endX - startX)); // anticlockwise
-        }
-
-        public Line divide(int x, int z) {
-            Line other = createCopy();
-            this.endX = x;
-            this.endZ = z;
-            other.startX = x;
-            other.startZ = z;
-            return other;
-        }
-
-        @Override
-        public boolean equals(Object object) {
-            if (this == object) return true;
-            if (object == null || getClass() != object.getClass()) return false;
-            Line line = (Line) object;
-            return startX == line.startX && startZ == line.startZ && endX == line.endX && endZ == line.endZ;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = 1;
-
-            result = 31 * result + startX;
-            result = 31 * result + startZ;
-            result = 31 * result + endX;
-            result = 31 * result + endZ;
-
-            return result;
-        }
     }
 }

@@ -8,16 +8,19 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * Executable specification (test oracle) of {@link SectionsToOutlines#merge(LongSet, int)}.
  * <p>
  * The claim, preconditions and scope are recorded as FV-001 in {@code verification/README.md}.
- * This class only uses mathematical definitions (winding number, 8-connectivity) and does not reuse any logic of the
- * production implementation. The result is a list of polygons; together they must cover every input section exactly
- * once and nothing else.
+ * This class only uses mathematical definitions (winding number, 8-connectivity, section boundary) and does not reuse
+ * any logic of the production implementation. The result is a list of outlines (a shape and its holes, as passed to
+ * BlueMap's {@code ShapeMarker}); together they must fill every input section exactly once and nothing else, and every
+ * drawn edge must lie on the boundary of the sections.
  */
 final class OutlineSpec {
 
@@ -87,59 +90,43 @@ final class OutlineSpec {
      *
      * @param sections the input of {@link SectionsToOutlines#merge(LongSet, int)}
      * @param shift    the shift passed to {@link SectionsToOutlines#merge(LongSet, int)}
-     * @param polygons the result of {@link SectionsToOutlines#merge(LongSet, int)}
+     * @param outlines the result of {@link SectionsToOutlines#merge(LongSet, int)}
      * @return a violation message, or empty if the result satisfies the specification
      */
-    static Optional<String> findViolation(LongSet sections, int shift, List<Vector2d[]> polygons) {
-        if (polygons == null) {
+    static Optional<String> findViolation(LongSet sections, int shift, List<SectionsToOutlines.Outline> outlines) {
+        if (outlines == null) {
             return Optional.of("result must not be null");
         }
 
-        // P0: no polygon for no section, and at least one polygon otherwise.
-        if (sections.isEmpty() != polygons.isEmpty()) {
-            return Optional.of("expected " + (sections.isEmpty() ? "no polygon" : "at least one polygon") + " but got " + polygons.size());
+        // P0: no outline for no section, and at least one outline otherwise.
+        if (sections.isEmpty() != outlines.isEmpty()) {
+            return Optional.of("expected " + (sections.isEmpty() ? "no outline" : "at least one outline") + " but got " + outlines.size());
         }
 
-        double unit = 1L << shift;
-        List<long[][]> lattices = new ArrayList<>(polygons.size());
-
-        for (int p = 0; p < polygons.size(); p++) {
-            Vector2d[] polygon = polygons.get(p);
-            if (polygon == null || polygon.length < 4) {
-                return Optional.of("polygon " + p + " must have at least 4 vertices: " + Arrays.toString(polygon));
+        // Rings of each outline in section units: index 0 is the shape, the others are holes.
+        List<List<long[][]>> rings = new ArrayList<>(outlines.size());
+        for (int o = 0; o < outlines.size(); o++) {
+            SectionsToOutlines.Outline outline = outlines.get(o);
+            if (outline == null || outline.shape() == null || outline.holes() == null) {
+                return Optional.of("outline " + o + " must have a shape and a hole list");
             }
 
-            long[][] vertices = new long[polygon.length][2];
+            List<Vector2d[]> polygons = new ArrayList<>();
+            polygons.add(outline.shape());
+            polygons.addAll(outline.holes());
 
-            // P1: every vertex is a section corner, i.e. an integer multiple of 2^shift.
-            for (int i = 0; i < polygon.length; i++) {
-                double x = polygon[i].getX() / unit;
-                double z = polygon[i].getY() / unit;
-                if (x != Math.rint(x) || z != Math.rint(z)) {
-                    return Optional.of("vertex " + i + " of polygon " + p + " is not a section corner: " + polygon[i]);
+            List<long[][]> converted = new ArrayList<>(polygons.size());
+            for (int r = 0; r < polygons.size(); r++) {
+                String name = "ring " + r + " of outline " + o;
+                Optional<long[][]> ring = toSectionUnits(polygons.get(r), shift);
+                if (ring.isEmpty()) {
+                    return Optional.of(name + " is not a closed axis-aligned polygon on the section grid: " + Arrays.toString(polygons.get(r)));
                 }
-                vertices[i][0] = (long) x;
-                vertices[i][1] = (long) z;
+                converted.add(ring.get());
             }
-
-            // P2: the closed polygon is rectilinear and has no zero-length edge.
-            for (int i = 0; i < vertices.length; i++) {
-                long[] a = vertices[i];
-                long[] b = vertices[(i + 1) % vertices.length];
-                boolean horizontal = a[1] == b[1] && a[0] != b[0];
-                boolean vertical = a[0] == b[0] && a[1] != b[1];
-                if (!horizontal && !vertical) {
-                    return Optional.of("edge " + i + " of polygon " + p + " is not a non-degenerate axis-aligned edge: " + Arrays.toString(a) + " -> " + Arrays.toString(b));
-                }
-            }
-
-            lattices.add(vertices);
+            rings.add(converted);
         }
 
-        // P3: for each polygon there is an orientation w (+1 or -1) such that its winding number around the centre of
-        //     every section is either 0 or w, and it covers (winding number w) at least one section.
-        // P4: every section in the input is covered by exactly one polygon, and every other section by none.
-        //     Both are checked for every section in the bounding box of the input and the polygons, plus a margin of one.
         long minX = Long.MAX_VALUE, minZ = Long.MAX_VALUE, maxX = Long.MIN_VALUE, maxZ = Long.MIN_VALUE;
         for (long key : sections) {
             minX = Math.min(minX, sectionX(key));
@@ -147,38 +134,60 @@ final class OutlineSpec {
             maxX = Math.max(maxX, sectionX(key) + 1);
             maxZ = Math.max(maxZ, sectionZ(key) + 1);
         }
-        for (long[][] vertices : lattices) {
-            for (long[] vertex : vertices) {
-                minX = Math.min(minX, vertex[0]);
-                minZ = Math.min(minZ, vertex[1]);
-                maxX = Math.max(maxX, vertex[0]);
-                maxZ = Math.max(maxZ, vertex[1]);
+        for (List<long[][]> outlineRings : rings) {
+            for (long[][] ring : outlineRings) {
+                for (long[] vertex : ring) {
+                    minX = Math.min(minX, vertex[0]);
+                    minZ = Math.min(minZ, vertex[1]);
+                    maxX = Math.max(maxX, vertex[0]);
+                    maxZ = Math.max(maxZ, vertex[1]);
+                }
             }
         }
 
-        int[] orientations = new int[lattices.size()];
-        List<LongSet> covered = new ArrayList<>(lattices.size());
-        for (int p = 0; p < lattices.size(); p++) {
-            covered.add(new LongOpenHashSet());
+        // P3: a section is filled by an outline when it is inside the shape and inside none of its holes. "Inside" means
+        //     a winding number of +1 or -1; any other non-zero value is a violation. A hole must be inside the shape, and
+        //     the holes of an outline must not overlap. Every outline fills at least one section.
+        // P4: every section in the input is filled by exactly one outline, and every other section by none.
+        //     Both are checked for every section in the bounding box of the input and all rings, plus a margin of one.
+        List<LongSet> filled = new ArrayList<>(rings.size());
+        for (int o = 0; o < rings.size(); o++) {
+            filled.add(new LongOpenHashSet());
         }
 
         for (long x = minX - 1; x <= maxX; x++) {
             for (long z = minZ - 1; z <= maxZ; z++) {
-                int covering = 0;
+                int filling = 0;
 
-                for (int p = 0; p < lattices.size(); p++) {
-                    int winding = windingNumber(lattices.get(p), x, z);
-                    if (winding == 0) {
-                        continue;
+                for (int o = 0; o < rings.size(); o++) {
+                    List<long[][]> outlineRings = rings.get(o);
+                    int shapeWinding = windingNumber(outlineRings.getFirst(), x, z);
+                    if (Math.abs(shapeWinding) > 1) {
+                        return Optional.of("winding number of the shape of outline " + o + " around section (" + x + ", " + z + ") is " + shapeWinding);
                     }
-                    if (winding != 1 && winding != -1 || orientations[p] != 0 && orientations[p] != winding) {
-                        return Optional.of("winding number of polygon " + p + " around section (" + x + ", " + z + ") is " + winding
-                                + " but expected 0 or " + (orientations[p] != 0 ? orientations[p] : "+1/-1"));
+
+                    int coveringHoles = 0;
+                    for (int r = 1; r < outlineRings.size(); r++) {
+                        int holeWinding = windingNumber(outlineRings.get(r), x, z);
+                        if (Math.abs(holeWinding) > 1) {
+                            return Optional.of("winding number of ring " + r + " of outline " + o + " around section (" + x + ", " + z + ") is " + holeWinding);
+                        }
+                        if (holeWinding != 0) {
+                            coveringHoles++;
+                        }
                     }
-                    orientations[p] = winding;
-                    covering++;
-                    if (Integer.MIN_VALUE <= x && x <= Integer.MAX_VALUE && Integer.MIN_VALUE <= z && z <= Integer.MAX_VALUE) {
-                        covered.get(p).add(key((int) x, (int) z));
+                    if (coveringHoles > 1) {
+                        return Optional.of("holes of outline " + o + " overlap at section (" + x + ", " + z + ")");
+                    }
+                    if (coveringHoles == 1 && shapeWinding == 0) {
+                        return Optional.of("a hole of outline " + o + " is outside its shape at section (" + x + ", " + z + ")");
+                    }
+
+                    if (shapeWinding != 0 && coveringHoles == 0) {
+                        filling++;
+                        if (Integer.MIN_VALUE <= x && x <= Integer.MAX_VALUE && Integer.MIN_VALUE <= z && z <= Integer.MAX_VALUE) {
+                            filled.get(o).add(key((int) x, (int) z));
+                        }
                     }
                 }
 
@@ -186,39 +195,126 @@ final class OutlineSpec {
                         && Integer.MIN_VALUE <= z && z <= Integer.MAX_VALUE
                         && sections.contains(key((int) x, (int) z));
                 int expected = expectedInside ? 1 : 0;
-                if (covering != expected) {
-                    return Optional.of("section (" + x + ", " + z + ") is covered by " + covering + " polygon(s) but expected " + expected);
+                if (filling != expected) {
+                    return Optional.of("section (" + x + ", " + z + ") is filled by " + filling + " outline(s) but expected " + expected);
                 }
             }
         }
 
-        for (int p = 0; p < orientations.length; p++) {
-            if (orientations[p] == 0) {
-                return Optional.of("polygon " + p + " covers no section");
+        for (int o = 0; o < filled.size(); o++) {
+            if (filled.get(o).isEmpty()) {
+                return Optional.of("outline " + o + " fills no section");
             }
         }
 
-        // P5: each polygon covers exactly one 8-connected component of the input, i.e. the sections covered by each
-        //     polygon are 8-connected and there are as many polygons as components.
-        for (int p = 0; p < covered.size(); p++) {
-            if (!isEightConnected(covered.get(p))) {
-                return Optional.of("sections covered by polygon " + p + " are not 8-connected");
+        // P5: each outline fills exactly one 8-connected component of the input, i.e. the sections filled by each
+        //     outline are 8-connected and there are as many outlines as components.
+        for (int o = 0; o < filled.size(); o++) {
+            if (!isEightConnected(filled.get(o))) {
+                return Optional.of("sections filled by outline " + o + " are not 8-connected");
             }
         }
         int components = countEightConnectedComponents(sections);
-        if (components != polygons.size()) {
-            return Optional.of("expected one polygon per 8-connected component (" + components + ") but got " + polygons.size());
+        if (components != outlines.size()) {
+            return Optional.of("expected one outline per 8-connected component (" + components + ") but got " + outlines.size());
+        }
+
+        // P8: no line is drawn anywhere but on the boundary of the sections. Splitting every edge of every ring into
+        //     unit edges, each unit edge between a section in the input and a section not in the input appears exactly
+        //     once, and no other unit edge appears. (BlueMap draws every edge of the shape and its holes.)
+        Map<String, Integer> drawn = new HashMap<>();
+        for (List<long[][]> outlineRings : rings) {
+            for (long[][] ring : outlineRings) {
+                for (int i = 0; i < ring.length; i++) {
+                    long[] a = ring[i];
+                    long[] b = ring[(i + 1) % ring.length];
+                    long dx = Long.signum(b[0] - a[0]);
+                    long dz = Long.signum(b[1] - a[1]);
+                    for (long x = a[0], z = a[1]; x != b[0] || z != b[1]; x += dx, z += dz) {
+                        drawn.merge(unitEdge(x, z, x + dx, z + dz), 1, Integer::sum);
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry<String, Integer> entry : drawn.entrySet()) {
+            if (entry.getValue() != 1) {
+                return Optional.of("unit edge " + entry.getKey() + " is drawn " + entry.getValue() + " times");
+            }
+        }
+
+        int boundaryEdges = 0;
+        for (long key : sections) {
+            int x = sectionX(key);
+            int z = sectionZ(key);
+            String[] edges = {unitEdge(x, z, x + 1, z), unitEdge(x, z + 1, x + 1, z + 1), unitEdge(x, z, x, z + 1), unitEdge(x + 1, z, x + 1, z + 1)};
+            long[][] neighbours = {{x, z - 1}, {x, z + 1}, {x - 1, z}, {x + 1, z}};
+            for (int i = 0; i < 4; i++) {
+                if (sections.contains(key((int) neighbours[i][0], (int) neighbours[i][1]))) {
+                    continue;
+                }
+                boundaryEdges++;
+                if (!drawn.containsKey(edges[i])) {
+                    return Optional.of("boundary unit edge " + edges[i] + " is not drawn");
+                }
+            }
+        }
+        if (drawn.size() != boundaryEdges) {
+            return Optional.of((drawn.size() - boundaryEdges) + " unit edge(s) are drawn inside or outside the sections");
         }
 
         return Optional.empty();
     }
 
-    static Optional<String> findViolation(LongSet sections, int shift, Vector2d[] polygon) {
-        return findViolation(sections, shift, List.<Vector2d[]>of(polygon));
+    static Optional<String> findViolation(LongSet sections, int shift, SectionsToOutlines.Outline outline) {
+        return findViolation(sections, shift, List.of(outline));
+    }
+
+    static SectionsToOutlines.Outline outline(Vector2d[] shape, Vector2d[]... holes) {
+        return new SectionsToOutlines.Outline(shape, List.of(holes));
     }
 
     /**
-     * Winding number of the closed polygon around the centre {@code (x + 1/2, z + 1/2)} of the section {@code (x, z)}.
+     * P1 and P2 for one ring: at least 4 vertices, every vertex is a section corner (an integer multiple of 2^shift),
+     * and every edge, including the closing edge, is axis-aligned and has non-zero length.
+     */
+    private static Optional<long[][]> toSectionUnits(Vector2d[] polygon, int shift) {
+        if (polygon == null || polygon.length < 4) {
+            return Optional.empty();
+        }
+
+        double unit = 1L << shift;
+        long[][] vertices = new long[polygon.length][2];
+        for (int i = 0; i < polygon.length; i++) {
+            double x = polygon[i].getX() / unit;
+            double z = polygon[i].getY() / unit;
+            if (x != Math.rint(x) || z != Math.rint(z)) {
+                return Optional.empty();
+            }
+            vertices[i][0] = (long) x;
+            vertices[i][1] = (long) z;
+        }
+
+        for (int i = 0; i < vertices.length; i++) {
+            long[] a = vertices[i];
+            long[] b = vertices[(i + 1) % vertices.length];
+            boolean horizontal = a[1] == b[1] && a[0] != b[0];
+            boolean vertical = a[0] == b[0] && a[1] != b[1];
+            if (!horizontal && !vertical) {
+                return Optional.empty();
+            }
+        }
+
+        return Optional.of(vertices);
+    }
+
+    private static String unitEdge(long x1, long z1, long x2, long z2) {
+        boolean ordered = x1 < x2 || x1 == x2 && z1 < z2;
+        return ordered ? "(" + x1 + ", " + z1 + ")-(" + x2 + ", " + z2 + ")" : "(" + x2 + ", " + z2 + ")-(" + x1 + ", " + z1 + ")";
+    }
+
+    /**
+     * Winding number of the closed ring around the centre {@code (x + 1/2, z + 1/2)} of the section {@code (x, z)}.
      * <p>
      * Counts signed crossings of vertical edges with the ray from the centre towards +X. Because every vertex is an
      * integer point, the centre is never on an edge and the ray never passes through a vertex. The sign of the result
