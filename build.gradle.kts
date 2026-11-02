@@ -1,5 +1,5 @@
 plugins {
-    `java-library`
+    alias(libs.plugins.jcommon)
     alias(libs.plugins.paperweight.userdev)
 }
 
@@ -10,37 +10,37 @@ val mcVersion = libs.versions.folia.get().replaceAfter(".build", "").removeSuffi
 val fullVersion = "${version}-mc${mcVersion}"
 
 repositories {
-    mavenCentral()
     maven {
         url = uri("https://repo.bluecolored.de/releases")
     }
 }
 
-dependencies {
-    paperweight.foliaDevBundle(libs.versions.folia.get())
-    compileOnly(libs.bluemap.api)
+jcommon {
+    javaVersion = JavaVersion.VERSION_25
+
+    setupJUnit(libs.junit.bom)
+    setupMockito(libs.mockito)
+
+    commonDependencies {
+        compileOnly(libs.bluemap.api)
+
+        testImplementation(libs.junit.jupiter)
+        testImplementation(libs.bluemap.api)
+    }
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+dependencies {
+    paperweight.foliaDevBundle(libs.versions.folia.get())
 }
 
 tasks {
-    compileJava {
-        options.encoding = Charsets.UTF_8.name()
-        options.release.set(25)
+    jar {
+        archiveFileName = "FoliaRegionVisualizer-${fullVersion}.jar"
     }
 
     processResources {
-        filteringCharset = Charsets.UTF_8.name()
-
         filesMatching(listOf("plugin.yml")) {
             expand("projectVersion" to fullVersion)
         }
-    }
-
-    jar {
-        archiveFileName = "FoliaRegionVisualizer-${fullVersion}.jar"
     }
 }
