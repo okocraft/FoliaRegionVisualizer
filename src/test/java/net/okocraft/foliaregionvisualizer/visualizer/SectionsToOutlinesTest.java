@@ -9,7 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.util.NoSuchElementException;
+import java.util.List;
 import java.util.Optional;
 import java.util.SplittableRandom;
 
@@ -29,13 +29,14 @@ class SectionsToOutlinesTest {
     void testSingleSectionBecomesItsFourCorners() {
         LongSet sections = OutlineSpec.sections(new int[]{0, 0});
 
-        Vector2d[] polygon = SectionsToOutlines.merge(sections, 0);
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
 
+        Assertions.assertEquals(1, polygons.size());
         Assertions.assertArrayEquals(
                 new Vector2d[]{new Vector2d(0, 0), new Vector2d(1, 0), new Vector2d(1, 1), new Vector2d(0, 1)},
-                sortedCyclically(polygon)
+                sortedCyclically(polygons.getFirst())
         );
-        assertSatisfiesSpecification(sections, 0, polygon);
+        assertSatisfiesSpecification(sections, 0, polygons);
     }
 
     @Test
@@ -49,18 +50,62 @@ class SectionsToOutlinesTest {
             }
         }
 
-        Vector2d[] polygon = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygon);
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
     }
 
     @Test
     void testDiagonallyTouchingSectionsAreBothCovered() {
         LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1});
 
-        Vector2d[] polygon = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygon);
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+    }
+
+    @Test
+    void testSeparatedSectionsAreAllCovered() {
+        // Regression: the second section was dropped when the sections were not 8-connected.
+        LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{2, 0});
+
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
+
+        Assertions.assertEquals(2, polygons.size());
+        assertSatisfiesSpecification(sections, 0, polygons);
+    }
+
+    @Test
+    void testIslandInsideAHoleIsCoveredSeparately() {
+        // 5x5 ring with a 3x3 hole, and one section in the middle of the hole.
+        LongSet sections = new LongOpenHashSet();
+        for (int x = 0; x < 5; x++) {
+            for (int z = 0; z < 5; z++) {
+                if (x == 0 || z == 0 || x == 4 || z == 4) {
+                    sections.add(OutlineSpec.key(x, z));
+                }
+            }
+        }
+        sections.add(OutlineSpec.key(2, 2));
+
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+
+        Assertions.assertEquals(2, polygons.size());
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+    }
+
+    @Test
+    void testFirstPolygonCoversTheSmallestSection() {
+        // The first polygon gets the region's marker id, so the order must not depend on hash iteration order.
+        LongSet sections = OutlineSpec.sections(new int[]{10, -5}, new int[]{-3, 7}, new int[]{-3, 4}, new int[]{0, 0});
+
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
+
+        Assertions.assertEquals(4, polygons.size());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 4}), 0, polygons.getFirst()).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 7}), 0, polygons.get(1)).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{0, 0}), 0, polygons.get(2)).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{10, -5}), 0, polygons.get(3)).isEmpty());
     }
 
     @ParameterizedTest
@@ -78,9 +123,9 @@ class SectionsToOutlinesTest {
                 new int[]{sectionX, sectionZ - 1}
         );
 
-        Vector2d[] polygon = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygon);
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
     }
 
     @ParameterizedTest
@@ -91,25 +136,27 @@ class SectionsToOutlinesTest {
                 new int[]{0, 1}, new int[]{2, 1},
                 new int[]{0, 2}, new int[]{1, 2}, new int[]{2, 2}, new int[]{3, 3}
         );
-        Vector2d[] unshifted = SectionsToOutlines.merge(new LongOpenHashSet(sections), 0);
+        List<Vector2d[]> unshifted = SectionsToOutlines.merge(new LongOpenHashSet(sections), 0);
 
-        Vector2d[] shifted = SectionsToOutlines.merge(sections, shift);
+        List<Vector2d[]> shifted = SectionsToOutlines.merge(sections, shift);
 
-        Vector2d[] expected = new Vector2d[unshifted.length];
-        for (int i = 0; i < unshifted.length; i++) {
-            expected[i] = unshifted[i].mul(1 << shift);
+        Assertions.assertEquals(unshifted.size(), shifted.size());
+        for (int p = 0; p < unshifted.size(); p++) {
+            Vector2d[] expected = new Vector2d[unshifted.get(p).length];
+            for (int i = 0; i < expected.length; i++) {
+                expected[i] = unshifted.get(p)[i].mul(1 << shift);
+            }
+            Assertions.assertArrayEquals(expected, shifted.get(p));
         }
-        Assertions.assertArrayEquals(expected, shifted);
     }
 
     @Test
-    void testEmptySectionsAreRejected() {
-        // Precondition violation: Folia never reports a region without sections.
-        Assertions.assertThrows(NoSuchElementException.class, () -> SectionsToOutlines.merge(new LongOpenHashSet(), DEFAULT_SHIFT));
+    void testEmptySectionsProduceNoPolygon() {
+        Assertions.assertEquals(List.of(), SectionsToOutlines.merge(new LongOpenHashSet(), DEFAULT_SHIFT));
     }
 
     /**
-     * Bounded exhaustive check: every non-empty 8-connected subset of a {@code width x height} grid.
+     * Bounded exhaustive check: every subset of a {@code width x height} grid.
      * The grid straddles the origin so that negative section coordinates are included.
      */
     @ParameterizedTest
@@ -120,48 +167,45 @@ class SectionsToOutlinesTest {
             "2, 8", // 65,535 subsets
             "8, 2", // 65,535 subsets
     })
-    void testEveryConnectedSubsetOfSmallGridIsCoveredExactly(int width, int height) {
+    void testEverySubsetOfSmallGridIsCoveredExactly(int width, int height) {
         int originX = -width / 2;
         int originZ = -height / 2;
-        int checked = 0;
 
-        for (int mask = 1; mask < 1 << (width * height); mask++) {
+        for (int mask = 0; mask < 1 << (width * height); mask++) {
             LongSet sections = new LongOpenHashSet();
             for (int bit = 0; bit < width * height; bit++) {
                 if ((mask >> bit & 1) != 0) {
                     sections.add(OutlineSpec.key(originX + bit % width, originZ + bit / width));
                 }
             }
-            if (!OutlineSpec.isEightConnected(sections)) {
-                continue;
-            }
 
             assertSatisfiesSpecification(sections, 0, SectionsToOutlines.merge(new LongOpenHashSet(sections), 0), "mask=" + mask);
-            checked++;
         }
-
-        Assertions.assertTrue(checked > 0);
     }
 
     /**
-     * Seeded randomized check on larger regions: the 8-connected component of a random section pattern.
+     * Seeded randomized check on larger regions: random section patterns (connected or not) and the 8-connected component
+     * of such a pattern.
      * A failure message contains the seed and iteration so that the input can be regenerated.
      */
     @ParameterizedTest
     @CsvSource({
+            "12, 0.3",
             "12, 0.55",
             "12, 0.75",
+            "24, 0.4",
             "24, 0.6",
             "24, 0.85",
     })
-    void testRandomConnectedRegionsAreCoveredExactly(int size, double density) {
+    void testRandomRegionsAreCoveredExactly(int size, double density) {
         long seed = 0x5EC7_1045L;
         SplittableRandom random = new SplittableRandom(seed);
 
         for (int iteration = 0; iteration < 1_000; iteration++) {
             int originX = random.nextInt(-1_000, 1_000);
             int originZ = random.nextInt(-1_000, 1_000);
-            LongSet sections = randomConnectedRegion(random, originX, originZ, size, density);
+            LongSet pattern = randomPattern(random, originX, originZ, size, density);
+            LongSet sections = iteration % 2 == 0 ? pattern : connectedComponentOfCentre(pattern, originX, originZ, size);
 
             assertSatisfiesSpecification(
                     sections, DEFAULT_SHIFT, SectionsToOutlines.merge(new LongOpenHashSet(sections), DEFAULT_SHIFT),
@@ -170,7 +214,7 @@ class SectionsToOutlinesTest {
         }
     }
 
-    private static LongSet randomConnectedRegion(SplittableRandom random, int originX, int originZ, int size, double density) {
+    private static LongSet randomPattern(SplittableRandom random, int originX, int originZ, int size, double density) {
         LongSet pattern = new LongOpenHashSet();
         for (int x = 0; x < size; x++) {
             for (int z = 0; z < size; z++) {
@@ -179,7 +223,11 @@ class SectionsToOutlinesTest {
                 }
             }
         }
+        return pattern;
+    }
 
+    private static LongSet connectedComponentOfCentre(LongSet pattern, int originX, int originZ, int size) {
+        pattern = new LongOpenHashSet(pattern);
         long start = OutlineSpec.key(originX + size / 2, originZ + size / 2);
         pattern.add(start);
 
@@ -201,12 +249,12 @@ class SectionsToOutlinesTest {
         return component;
     }
 
-    private static void assertSatisfiesSpecification(LongSet sections, int shift, Vector2d[] polygon) {
-        assertSatisfiesSpecification(sections, shift, polygon, "");
+    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<Vector2d[]> polygons) {
+        assertSatisfiesSpecification(sections, shift, polygons, "");
     }
 
-    private static void assertSatisfiesSpecification(LongSet sections, int shift, Vector2d[] polygon, String context) {
-        Optional<String> violation = OutlineSpec.findViolation(sections, shift, polygon);
+    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<Vector2d[]> polygons, String context) {
+        Optional<String> violation = OutlineSpec.findViolation(sections, shift, polygons);
         if (violation.isPresent()) {
             Assertions.fail(violation.get() + " (" + context + ", sections=" + describe(sections) + ")");
         }

@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.UUID;
 
 public class CachingVisualizer {
@@ -58,13 +59,18 @@ public class CachingVisualizer {
 
             switch (this.renderType) {
                 case OUTLINES -> {
-                    String globalId = createGlobalId(markerName);
-                    unusedMarkers.remove(globalId);
+                    List<Vector2d[]> outlines = SectionsToOutlines.merge(sections, info.getShift());
 
-                    Vector2d[] points = SectionsToOutlines.merge(sections, info.getShift());
-                    Vector3d pos = new Vector3d(points[0].getX(),0.0,points[0].getY());
-                    ShapeMarker.Builder marker = markerBuilder.shape(new Shape(points), 0).position(pos);
-                    this.markerSet.getMarkers().put(globalId, marker.build());
+                    for (int i = 0, size = outlines.size(); i < size; i++) {
+                        // The first part keeps the region's marker name so that a connected region has the same marker id as before.
+                        String globalId = createGlobalId(i == 0 ? markerName : markerName + "_" + i);
+                        unusedMarkers.remove(globalId);
+
+                        Vector2d[] points = outlines.get(i);
+                        Vector3d pos = new Vector3d(points[0].getX(), 0.0, points[0].getY());
+                        ShapeMarker.Builder marker = markerBuilder.shape(new Shape(points), 0).position(pos);
+                        this.markerSet.getMarkers().put(globalId, marker.build());
+                    }
                 }
                 case GRIDS -> SectionsToGrids.render(
                         sections, markerName, info.getShift(), markerBuilder,
