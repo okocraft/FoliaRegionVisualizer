@@ -16,7 +16,7 @@ import java.util.SplittableRandom;
 /**
  * Tests for FV-001 ({@code verification/README.md}).
  * <p>
- * The specification itself is {@link OutlineSpec#findViolation(LongSet, int, Vector2d[])}.
+ * The specification itself is {@link OutlineSpec#findViolation(LongSet, int, List)}.
  */
 class SectionsToOutlinesTest {
 
@@ -29,14 +29,15 @@ class SectionsToOutlinesTest {
     void testSingleSectionBecomesItsFourCorners() {
         LongSet sections = OutlineSpec.sections(new int[]{0, 0});
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
 
-        Assertions.assertEquals(1, polygons.size());
+        Assertions.assertEquals(1, outlines.size());
         Assertions.assertArrayEquals(
                 new Vector2d[]{new Vector2d(0, 0), new Vector2d(1, 0), new Vector2d(1, 1), new Vector2d(0, 1)},
-                sortedCyclically(polygons.getFirst())
+                sortedCyclically(outlines.getFirst().shape())
         );
-        assertSatisfiesSpecification(sections, 0, polygons);
+        Assertions.assertEquals(List.of(), outlines.getFirst().holes());
+        assertSatisfiesSpecification(sections, 0, outlines);
     }
 
     @Test
@@ -50,29 +51,67 @@ class SectionsToOutlinesTest {
             }
         }
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+        Assertions.assertEquals(1, outlines.size());
+        Assertions.assertEquals(1, outlines.getFirst().holes().size());
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, outlines);
     }
 
     @Test
-    void testDiagonallyTouchingSectionsAreBothCovered() {
+    void testSectionsTouchingOnlyAtCornersAreSeparateOutlines() {
+        // Regression for BlueMap: as one shape whose hole (1, 1) touches the outer ring at all four corners, three.js
+        // left part of the region unfilled.
+        // . # . .
+        // . . # .
+        // . # . #
+        // # . # .
+        LongSet sections = OutlineSpec.sections(
+                new int[]{1, 0}, new int[]{2, 1}, new int[]{1, 2}, new int[]{3, 2}, new int[]{0, 3}, new int[]{2, 3}
+        );
+
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
+
+        Assertions.assertEquals(6, outlines.size());
+        outlines.forEach(outline -> Assertions.assertEquals(List.of(), outline.holes()));
+        assertSatisfiesSpecification(sections, 0, outlines);
+    }
+
+    @Test
+    void testHoleTouchingTheOuterBoundaryAtACornerIsPartOfTheOuterRing() {
+        // # # #
+        // # . #
+        // # # .
+        LongSet sections = OutlineSpec.sections(
+                new int[]{0, 0}, new int[]{1, 0}, new int[]{2, 0}, new int[]{0, 1}, new int[]{2, 1}, new int[]{0, 2}, new int[]{1, 2}
+        );
+
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
+
+        Assertions.assertEquals(1, outlines.size());
+        Assertions.assertEquals(List.of(), outlines.getFirst().holes());
+        assertSatisfiesSpecification(sections, 0, outlines);
+    }
+
+    @Test
+    void testDiagonallyTouchingSectionsAreSeparateOutlines() {
         LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1});
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+        Assertions.assertEquals(2, outlines.size());
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, outlines);
     }
 
     @Test
     void testSeparatedSectionsAreAllCovered() {
-        // Regression: the second section was dropped when the sections were not 8-connected.
+        // Regression: the second section was dropped when the sections were not connected.
         LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{2, 0});
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
 
-        Assertions.assertEquals(2, polygons.size());
-        assertSatisfiesSpecification(sections, 0, polygons);
+        Assertions.assertEquals(2, outlines.size());
+        assertSatisfiesSpecification(sections, 0, outlines);
     }
 
     @Test
@@ -88,24 +127,26 @@ class SectionsToOutlinesTest {
         }
         sections.add(OutlineSpec.key(2, 2));
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        Assertions.assertEquals(2, polygons.size());
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+        Assertions.assertEquals(2, outlines.size());
+        Assertions.assertEquals(1, outlines.get(0).holes().size());
+        Assertions.assertEquals(List.of(), outlines.get(1).holes());
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, outlines);
     }
 
     @Test
-    void testFirstPolygonCoversTheSmallestSection() {
-        // The first polygon gets the region's marker id, so the order must not depend on hash iteration order.
+    void testFirstOutlineCoversTheSmallestSection() {
+        // The first outline gets the region's marker id, so the order must not depend on hash iteration order.
         LongSet sections = OutlineSpec.sections(new int[]{10, -5}, new int[]{-3, 7}, new int[]{-3, 4}, new int[]{0, 0});
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, 0);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
 
-        Assertions.assertEquals(4, polygons.size());
-        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 4}), 0, polygons.getFirst()).isEmpty());
-        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 7}), 0, polygons.get(1)).isEmpty());
-        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{0, 0}), 0, polygons.get(2)).isEmpty());
-        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{10, -5}), 0, polygons.get(3)).isEmpty());
+        Assertions.assertEquals(4, outlines.size());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 4}), 0, outlines.getFirst()).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{-3, 7}), 0, outlines.get(1)).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{0, 0}), 0, outlines.get(2)).isEmpty());
+        Assertions.assertTrue(OutlineSpec.findViolation(OutlineSpec.sections(new int[]{10, -5}), 0, outlines.get(3)).isEmpty());
     }
 
     @ParameterizedTest
@@ -123,35 +164,35 @@ class SectionsToOutlinesTest {
                 new int[]{sectionX, sectionZ - 1}
         );
 
-        List<Vector2d[]> polygons = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
-        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, polygons);
+        assertSatisfiesSpecification(sections, DEFAULT_SHIFT, outlines);
     }
 
     @ParameterizedTest
     @ValueSource(ints = {1, 4, 6, 8, 10})
-    void testShiftOnlyScalesTheUnshiftedPolygon(int shift) {
+    void testShiftOnlyScalesTheUnshiftedOutline(int shift) {
         LongSet sections = OutlineSpec.sections(
                 new int[]{0, 0}, new int[]{1, 0}, new int[]{2, 0},
                 new int[]{0, 1}, new int[]{2, 1},
                 new int[]{0, 2}, new int[]{1, 2}, new int[]{2, 2}, new int[]{3, 3}
         );
-        List<Vector2d[]> unshifted = SectionsToOutlines.merge(new LongOpenHashSet(sections), 0);
+        List<SectionsToOutlines.Outline> unshifted = SectionsToOutlines.merge(new LongOpenHashSet(sections), 0);
 
-        List<Vector2d[]> shifted = SectionsToOutlines.merge(sections, shift);
+        List<SectionsToOutlines.Outline> shifted = SectionsToOutlines.merge(sections, shift);
 
         Assertions.assertEquals(unshifted.size(), shifted.size());
-        for (int p = 0; p < unshifted.size(); p++) {
-            Vector2d[] expected = new Vector2d[unshifted.get(p).length];
-            for (int i = 0; i < expected.length; i++) {
-                expected[i] = unshifted.get(p)[i].mul(1 << shift);
+        for (int o = 0; o < unshifted.size(); o++) {
+            Assertions.assertArrayEquals(scaled(unshifted.get(o).shape(), shift), shifted.get(o).shape());
+            Assertions.assertEquals(unshifted.get(o).holes().size(), shifted.get(o).holes().size());
+            for (int h = 0; h < unshifted.get(o).holes().size(); h++) {
+                Assertions.assertArrayEquals(scaled(unshifted.get(o).holes().get(h), shift), shifted.get(o).holes().get(h));
             }
-            Assertions.assertArrayEquals(expected, shifted.get(p));
         }
     }
 
     @Test
-    void testEmptySectionsProduceNoPolygon() {
+    void testEmptySectionsProduceNoOutline() {
         Assertions.assertEquals(List.of(), SectionsToOutlines.merge(new LongOpenHashSet(), DEFAULT_SHIFT));
     }
 
@@ -249,12 +290,20 @@ class SectionsToOutlinesTest {
         return component;
     }
 
-    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<Vector2d[]> polygons) {
-        assertSatisfiesSpecification(sections, shift, polygons, "");
+    private static Vector2d[] scaled(Vector2d[] polygon, int shift) {
+        Vector2d[] result = new Vector2d[polygon.length];
+        for (int i = 0; i < polygon.length; i++) {
+            result[i] = polygon[i].mul(1 << shift);
+        }
+        return result;
     }
 
-    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<Vector2d[]> polygons, String context) {
-        Optional<String> violation = OutlineSpec.findViolation(sections, shift, polygons);
+    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<SectionsToOutlines.Outline> outlines) {
+        assertSatisfiesSpecification(sections, shift, outlines, "");
+    }
+
+    private static void assertSatisfiesSpecification(LongSet sections, int shift, List<SectionsToOutlines.Outline> outlines, String context) {
+        Optional<String> violation = OutlineSpec.findViolation(sections, shift, outlines);
         if (violation.isPresent()) {
             Assertions.fail(violation.get() + " (" + context + ", sections=" + describe(sections) + ")");
         }

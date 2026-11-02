@@ -59,16 +59,21 @@ public class CachingVisualizer {
 
             switch (this.renderType) {
                 case OUTLINES -> {
-                    List<Vector2d[]> outlines = SectionsToOutlines.merge(sections, info.getShift());
+                    List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, info.getShift());
 
                     for (int i = 0, size = outlines.size(); i < size; i++) {
-                        // The first part keeps the region's marker name so that a connected region has the same marker id as before.
+                        // The first part keeps the region's marker name, so a region in one piece has the same marker id as before.
                         String globalId = createGlobalId(i == 0 ? markerName : markerName + "_" + i);
                         unusedMarkers.remove(globalId);
 
-                        Vector2d[] points = outlines.get(i);
+                        SectionsToOutlines.Outline outline = outlines.get(i);
+                        Vector2d[] points = outline.shape();
                         Vector3d pos = new Vector3d(points[0].getX(), 0.0, points[0].getY());
-                        ShapeMarker.Builder marker = markerBuilder.shape(new Shape(points), 0).position(pos);
+                        // The builder is shared between markers and holes(...) appends, so clear the holes of the previous marker.
+                        ShapeMarker.Builder marker = markerBuilder.shape(new Shape(points), 0).clearHoles().position(pos);
+                        for (Vector2d[] hole : outline.holes()) {
+                            marker.holes(new Shape(hole));
+                        }
                         this.markerSet.getMarkers().put(globalId, marker.build());
                     }
                 }
