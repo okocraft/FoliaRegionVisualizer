@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -62,13 +63,17 @@ final class SectionsToOutlines {
     }
 
     private static List<LongSet> splitIntoConnectedComponents(LongSet sections) {
-        LongSet remaining = new LongOpenHashSet(sections);
+        // One pass over the sections with a single iterator: creating an iterator per component would scan the hash
+        // table again each time and make many small components quadratic.
+        LongSet visited = new LongOpenHashSet(sections.size());
         List<Component> components = new ArrayList<>();
         LongArrayFIFOQueue queue = new LongArrayFIFOQueue();
 
-        while (!remaining.isEmpty()) {
-            long start = remaining.iterator().nextLong();
-            remaining.remove(start);
+        for (LongIterator iterator = sections.iterator(); iterator.hasNext(); ) {
+            long start = iterator.nextLong();
+            if (!visited.add(start)) {
+                continue;
+            }
             queue.enqueue(start);
 
             LongSet component = new LongOpenHashSet();
@@ -88,7 +93,7 @@ final class SectionsToOutlines {
 
                 for (int direction = 0; direction < 4; direction++) {
                     long neighbour = SectionUtils.getSectionKey(x + DX[direction], z + DZ[direction]);
-                    if (remaining.remove(neighbour)) {
+                    if (sections.contains(neighbour) && visited.add(neighbour)) {
                         component.add(neighbour);
                         queue.enqueue(neighbour);
                     }
@@ -123,7 +128,9 @@ final class SectionsToOutlines {
      * outer boundary at such a vertex becomes a part of the outer ring, and holes that touch each other become one ring.
      */
     private static Outline outline(LongSet sections, int shift) {
-        Long2IntMap outgoing = new Long2IntOpenHashMap();
+        // Sized for the worst case (4 vertices per section) up front. Filling a small, growing open-addressing table in the
+        // iteration order of a larger one clusters the keys and makes the insertions quadratic.
+        Long2IntMap outgoing = new Long2IntOpenHashMap(4 * sections.size());
 
         sections.forEach(sectionKey -> {
             int x = SectionUtils.getSectionX(sectionKey);
@@ -138,16 +145,22 @@ final class SectionsToOutlines {
         Vector2d[] shape = null;
         List<LongList> holes = new ArrayList<>();
 
-        while (!outgoing.isEmpty()) {
-            LongList ring = traceRing(outgoing, allOutgoing);
+        // Start a ring from every edge that has not been traced yet, iterating allOutgoing only once: creating an
+        // iterator per ring would scan the hash table again each time and make many small holes quadratic.
+        for (Long2IntMap.Entry entry : allOutgoing.long2IntEntrySet()) {
+            long vertex = entry.getLongKey();
+            for (int untraced = outgoing.get(vertex); untraced != 0; untraced = outgoing.get(vertex)) {
+                LongList ring = traceRing(outgoing, allOutgoing, vertex, Integer.numberOfTrailingZeros(untraced));
 
-            if (signedDoubleArea(ring) > 0) {
-                if (shape != null) {
-                    throw new IllegalStateException("4-connected sections must have exactly one outer boundary");
+                // The signed area is positive exactly for the outer (counterclockwise) ring.
+                if (signedDoubleArea(ring) > 0) {
+                    if (shape != null) {
+                        throw new IllegalStateException("4-connected sections must have exactly one outer boundary");
+                    }
+                    shape = toVectors(ring, shift);
+                } else {
+                    holes.add(ring);
                 }
-                shape = toVectors(ring, shift);
-            } else {
-                holes.add(ring);
             }
         }
 
@@ -185,13 +198,14 @@ final class SectionsToOutlines {
     }
 
     /**
-     * Removes one ring from {@code outgoing} and returns its corners, starting from the smallest corner (X first, then Z).
+     * Removes the ring that contains the edge from {@code startVertex} in {@code startDirection} from {@code outgoing},
+     * and returns its corners, starting from the smallest corner (X first, then Z).
+     * <p>
+     * The turn rule pairs every incoming edge of a vertex with exactly one outgoing edge (also at a vertex where
+     * sections touch diagonally), so following it always returns to the start edge. A ring may pass through such a
+     * vertex twice, but never consecutively.
      */
-    private static LongList traceRing(Long2IntMap outgoing, Long2IntMap allOutgoing) {
-        Long2IntMap.Entry first = outgoing.long2IntEntrySet().iterator().next();
-        long startVertex = first.getLongKey();
-        int startDirection = Integer.numberOfTrailingZeros(first.getIntValue());
-
+    private static LongList traceRing(Long2IntMap outgoing, Long2IntMap allOutgoing, long startVertex, int startDirection) {
         LongList corners = new LongArrayList();
         long vertex = startVertex;
         int direction = startDirection;
