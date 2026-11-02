@@ -1,6 +1,8 @@
 package net.okocraft.foliaregionvisualizer.visualizer;
 
 import com.flowpowered.math.vector.Vector2d;
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
@@ -14,7 +16,84 @@ import java.util.Set;
 
 final class SectionsToOutlines {
 
-    static Vector2d[] merge(LongSet sections, int shift) {
+    /**
+     * Converts sections into outline polygons, one for each 8-connected component of the sections.
+     * <p>
+     * Two sections are connected when their Chebyshev distance is 1. A Folia region is not always 8-connected
+     * (e.g. with a grid exponent of 2 or less), so each component is outlined separately. The components are ordered by
+     * their smallest section (X first, then Z).
+     *
+     * @param sections the section keys
+     * @param shift    the shift to convert section coordinates to block coordinates
+     * @return the outline polygons, or an empty list if {@code sections} is empty
+     */
+    static List<Vector2d[]> merge(LongSet sections, int shift) {
+        List<LongSet> components = splitIntoConnectedComponents(sections);
+        List<Vector2d[]> result = new ArrayList<>(components.size());
+
+        for (LongSet component : components) {
+            result.add(mergeConnected(component, shift));
+        }
+
+        return result;
+    }
+
+    private static List<LongSet> splitIntoConnectedComponents(LongSet sections) {
+        LongSet remaining = new LongOpenHashSet(sections);
+        List<Component> components = new ArrayList<>();
+        LongArrayFIFOQueue queue = new LongArrayFIFOQueue();
+
+        while (!remaining.isEmpty()) {
+            long start = remaining.iterator().nextLong();
+            remaining.remove(start);
+            queue.enqueue(start);
+
+            LongSet component = new LongOpenHashSet();
+            component.add(start);
+            int minX = SectionUtils.getSectionX(start);
+            int minZ = SectionUtils.getSectionZ(start);
+
+            while (!queue.isEmpty()) {
+                long current = queue.dequeueLong();
+                int x = SectionUtils.getSectionX(current);
+                int z = SectionUtils.getSectionZ(current);
+
+                if (x < minX || x == minX && z < minZ) {
+                    minX = x;
+                    minZ = z;
+                }
+
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        long neighbour = SectionUtils.getSectionKey(x + dx, z + dz);
+                        if (remaining.remove(neighbour)) {
+                            component.add(neighbour);
+                            queue.enqueue(neighbour);
+                        }
+                    }
+                }
+            }
+
+            components.add(new Component(component, minX, minZ));
+        }
+
+        components.sort(Comparator.comparingInt(Component::minX).thenComparingInt(Component::minZ));
+
+        List<LongSet> result = new ArrayList<>(components.size());
+        for (Component component : components) {
+            result.add(component.sections());
+        }
+        return result;
+    }
+
+    private record Component(LongSet sections, int minX, int minZ) {
+    }
+
+    /**
+     * Converts non-empty, 8-connected sections into one outline polygon. Holes are joined to the outer boundary by
+     * zero-width bridges.
+     */
+    private static Vector2d[] mergeConnected(LongSet sections, int shift) {
         List<Line> res = withHalls(sortLines(toOutline(sections)));
         Vector2d[] result = new Vector2d[res.size()];
 
