@@ -59,35 +59,53 @@ class SectionsToOutlinesTest {
     }
 
     @Test
-    void testHolesTouchingTheOuterBoundaryDiagonallyAreSeparate() {
-        // Regression for BlueMap: as a single polygon with bridges, three.js triangulated only half of (1, -1).
+    void testSectionsTouchingOnlyAtCornersAreSeparateOutlines() {
+        // Regression for BlueMap: as one shape whose hole (1, 1) touches the outer ring at all four corners, three.js
+        // left part of the region unfilled.
+        // . # . .
         // . . # .
         // . # . #
         // # . # .
-        // . # . .
         LongSet sections = OutlineSpec.sections(
-                new int[]{2, 0}, new int[]{1, 1}, new int[]{3, 1}, new int[]{0, 2}, new int[]{2, 2}, new int[]{1, 3}
+                new int[]{1, 0}, new int[]{2, 1}, new int[]{1, 2}, new int[]{3, 2}, new int[]{0, 3}, new int[]{2, 3}
+        );
+
+        List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
+
+        Assertions.assertEquals(6, outlines.size());
+        outlines.forEach(outline -> Assertions.assertEquals(List.of(), outline.holes()));
+        assertSatisfiesSpecification(sections, 0, outlines);
+    }
+
+    @Test
+    void testHoleTouchingTheOuterBoundaryAtACornerIsPartOfTheOuterRing() {
+        // # # #
+        // # . #
+        // # # .
+        LongSet sections = OutlineSpec.sections(
+                new int[]{0, 0}, new int[]{1, 0}, new int[]{2, 0}, new int[]{0, 1}, new int[]{2, 1}, new int[]{0, 2}, new int[]{1, 2}
         );
 
         List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);
 
         Assertions.assertEquals(1, outlines.size());
-        Assertions.assertEquals(2, outlines.getFirst().holes().size()); // (2, 1) and (1, 2)
+        Assertions.assertEquals(List.of(), outlines.getFirst().holes());
         assertSatisfiesSpecification(sections, 0, outlines);
     }
 
     @Test
-    void testDiagonallyTouchingSectionsAreBothCovered() {
+    void testDiagonallyTouchingSectionsAreSeparateOutlines() {
         LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1});
 
         List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, DEFAULT_SHIFT);
 
+        Assertions.assertEquals(2, outlines.size());
         assertSatisfiesSpecification(sections, DEFAULT_SHIFT, outlines);
     }
 
     @Test
     void testSeparatedSectionsAreAllCovered() {
-        // Regression: the second section was dropped when the sections were not 8-connected.
+        // Regression: the second section was dropped when the sections were not connected.
         LongSet sections = OutlineSpec.sections(new int[]{0, 0}, new int[]{2, 0});
 
         List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, 0);

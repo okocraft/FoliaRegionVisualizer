@@ -25,11 +25,13 @@ final class SectionsToOutlines {
     private static final int[] DZ = {0, 1, 0, -1};
 
     /**
-     * Converts sections into outlines, one for each 8-connected component of the sections.
+     * Converts sections into outlines, one for each 4-connected component of the sections.
      * <p>
-     * Two sections are connected when their Chebyshev distance is 1. A Folia region is not always 8-connected
-     * (e.g. with a grid exponent of 2 or less), so each component is outlined separately. The outlines are ordered by
-     * the smallest section (X first, then Z) of their component.
+     * Two sections are connected when they share an edge. A Folia region is not always connected (e.g. with a grid
+     * exponent of 2 or less), and sections that touch only at a corner are outlined separately as well: BlueMap
+     * triangulates a shape whose rings touch at a vertex incorrectly in some cases (see FV-001), while two shapes that
+     * touch at a corner are drawn exactly as one. The outlines are ordered by the smallest section (X first, then Z) of
+     * their component.
      * <p>
      * Each outline consists of the outer boundary and the boundaries of its holes, so that they can be passed to
      * BlueMap's {@code ShapeMarker} as the shape and its holes. Every edge of every ring lies on the boundary of the
@@ -51,7 +53,7 @@ final class SectionsToOutlines {
     }
 
     /**
-     * The outline of an 8-connected component.
+     * The outline of a 4-connected component.
      *
      * @param shape the outer boundary
      * @param holes the boundaries of the holes, ordered by their smallest vertex (X first, then Z)
@@ -84,13 +86,11 @@ final class SectionsToOutlines {
                     minZ = z;
                 }
 
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        long neighbour = SectionUtils.getSectionKey(x + dx, z + dz);
-                        if (remaining.remove(neighbour)) {
-                            component.add(neighbour);
-                            queue.enqueue(neighbour);
-                        }
+                for (int direction = 0; direction < 4; direction++) {
+                    long neighbour = SectionUtils.getSectionKey(x + DX[direction], z + DZ[direction]);
+                    if (remaining.remove(neighbour)) {
+                        component.add(neighbour);
+                        queue.enqueue(neighbour);
                     }
                 }
             }
@@ -111,15 +111,16 @@ final class SectionsToOutlines {
     }
 
     /**
-     * Traces the boundary of non-empty, 8-connected sections.
+     * Traces the boundary of non-empty, 4-connected sections.
      * <p>
      * Every section contributes its four edges counterclockwise (the section is on the left of each edge), and edges
      * shared by two sections cancel out. The remaining edges form closed rings: the outer boundary is counterclockwise
      * (positive area) and every hole is clockwise (negative area).
      * <p>
-     * At a vertex where two sections touch only diagonally, two rings meet. Taking the right turn there keeps the two
-     * diagonal sections in the same ring, which matches the 8-connectivity of the sections (and the 4-connectivity of the
-     * empty space), so that a component has exactly one outer ring.
+     * At a vertex where two sections touch only diagonally, two rings meet. Taking the left turn there keeps the two
+     * diagonal empty sections in the same ring, which matches the 4-connectivity of the sections (and the
+     * 8-connectivity of the empty space), so that a component has exactly one outer ring. A hole that touches the
+     * outer boundary at such a vertex becomes a part of the outer ring, and holes that touch each other become one ring.
      */
     private static Outline outline(LongSet sections, int shift) {
         Long2IntMap outgoing = new Long2IntOpenHashMap();
@@ -142,7 +143,7 @@ final class SectionsToOutlines {
 
             if (signedDoubleArea(ring) > 0) {
                 if (shape != null) {
-                    throw new IllegalStateException("8-connected sections must have exactly one outer boundary");
+                    throw new IllegalStateException("4-connected sections must have exactly one outer boundary");
                 }
                 shape = toVectors(ring, shift);
             } else {
@@ -151,7 +152,7 @@ final class SectionsToOutlines {
         }
 
         if (shape == null) {
-            throw new IllegalStateException("8-connected sections must have exactly one outer boundary");
+            throw new IllegalStateException("4-connected sections must have exactly one outer boundary");
         }
 
         holes.sort(Comparator.comparingInt((LongList ring) -> SectionUtils.getSectionX(ring.getLong(0)))
@@ -231,20 +232,20 @@ final class SectionsToOutlines {
     }
 
     /**
-     * Chooses the outgoing edge after arriving in {@code incoming} direction: right turn, straight, then left turn.
-     * Only a vertex where sections touch diagonally has two outgoing edges, and there the right turn is taken.
+     * Chooses the outgoing edge after arriving in {@code incoming} direction: left turn, straight, then right turn.
+     * Only a vertex where sections touch diagonally has two outgoing edges, and there the left turn is taken.
      */
     private static int nextDirection(int outgoingMask, int incoming) {
-        int right = (incoming + 3) & 3;
-        if ((outgoingMask & (1 << right)) != 0) {
-            return right;
+        int left = (incoming + 1) & 3;
+        if ((outgoingMask & (1 << left)) != 0) {
+            return left;
         }
         if ((outgoingMask & (1 << incoming)) != 0) {
             return incoming;
         }
-        int left = (incoming + 1) & 3;
-        if ((outgoingMask & (1 << left)) != 0) {
-            return left;
+        int right = (incoming + 3) & 3;
+        if ((outgoingMask & (1 << right)) != 0) {
+            return right;
         }
         throw new IllegalStateException("The boundary is not closed");
     }

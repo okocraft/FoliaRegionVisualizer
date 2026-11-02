@@ -62,7 +62,7 @@ public class CachingVisualizer {
                     List<SectionsToOutlines.Outline> outlines = SectionsToOutlines.merge(sections, info.getShift());
 
                     for (int i = 0, size = outlines.size(); i < size; i++) {
-                        // The first part keeps the region's marker name so that a connected region has the same marker id as before.
+                        // The first part keeps the region's marker name, so a region in one piece has the same marker id as before.
                         String globalId = createGlobalId(i == 0 ? markerName : markerName + "_" + i);
                         unusedMarkers.remove(globalId);
 

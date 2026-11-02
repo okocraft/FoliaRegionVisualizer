@@ -111,10 +111,23 @@ class OutlineSpecTest {
     }
 
     @Test
-    void testEightConnectivityTreatsDiagonalNeighboursAsConnected() {
-        Assertions.assertTrue(OutlineSpec.isEightConnected(OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1})));
-        Assertions.assertFalse(OutlineSpec.isEightConnected(OutlineSpec.sections(new int[]{0, 0}, new int[]{2, 0})));
-        Assertions.assertFalse(OutlineSpec.isEightConnected(OutlineSpec.sections()));
+    void testFourConnectivityRequiresASharedEdge() {
+        Assertions.assertTrue(OutlineSpec.isFourConnected(OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 0})));
+        Assertions.assertFalse(OutlineSpec.isFourConnected(OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1})));
+        Assertions.assertFalse(OutlineSpec.isFourConnected(OutlineSpec.sections(new int[]{0, 0}, new int[]{2, 0})));
+        Assertions.assertFalse(OutlineSpec.isFourConnected(OutlineSpec.sections()));
+    }
+
+    @Test
+    void testRejectsOneOutlineCoveringDiagonallyTouchingSections() {
+        LongSet diagonal = OutlineSpec.sections(new int[]{0, 0}, new int[]{1, 1});
+        // One ring that passes through the shared corner (1, 1) twice.
+        Vector2d[] pinched = {v(0, 0), v(1, 0), v(1, 1), v(2, 1), v(2, 2), v(1, 2), v(1, 1), v(0, 1)};
+        Vector2d[] first = {v(0, 0), v(1, 0), v(1, 1), v(0, 1)};
+        Vector2d[] second = {v(1, 1), v(2, 1), v(2, 2), v(1, 2)};
+
+        Assertions.assertTrue(OutlineSpec.findViolation(diagonal, 0, OutlineSpec.outline(pinched)).isPresent());
+        Assertions.assertTrue(OutlineSpec.findViolation(diagonal, 0, List.of(OutlineSpec.outline(first), OutlineSpec.outline(second))).isEmpty());
     }
 
     private static LongSet ring3x3() {

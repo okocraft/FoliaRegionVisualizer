@@ -17,7 +17,7 @@ import java.util.Optional;
  * Executable specification (test oracle) of {@link SectionsToOutlines#merge(LongSet, int)}.
  * <p>
  * The claim, preconditions and scope are recorded as FV-001 in {@code verification/README.md}.
- * This class only uses mathematical definitions (winding number, 8-connectivity, section boundary) and does not reuse
+ * This class only uses mathematical definitions (winding number, 4-connectivity, section boundary) and does not reuse
  * any logic of the production implementation. The result is a list of outlines (a shape and its holes, as passed to
  * BlueMap's {@code ShapeMarker}); together they must fill every input section exactly once and nothing else, and every
  * drawn edge must lie on the boundary of the sections.
@@ -48,14 +48,14 @@ final class OutlineSpec {
         return sections;
     }
 
-    static boolean isEightConnected(LongSet sections) {
-        return countEightConnectedComponents(sections) == 1;
+    static boolean isFourConnected(LongSet sections) {
+        return countFourConnectedComponents(sections) == 1;
     }
 
     /**
-     * Number of 8-connected components (two sections are adjacent when their Chebyshev distance is 1).
+     * Number of 4-connected components (two sections are adjacent when they share an edge).
      */
-    static int countEightConnectedComponents(LongSet sections) {
+    static int countFourConnectedComponents(LongSet sections) {
         LongSet seen = new LongOpenHashSet();
         ArrayDeque<Long> queue = new ArrayDeque<>();
         int components = 0;
@@ -71,12 +71,10 @@ final class OutlineSpec {
                 long current = queue.poll();
                 int x = sectionX(current);
                 int z = sectionZ(current);
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        long neighbour = key(x + dx, z + dz);
-                        if (sections.contains(neighbour) && seen.add(neighbour)) {
-                            queue.add(neighbour);
-                        }
+                long[] neighbours = {key(x + 1, z), key(x - 1, z), key(x, z + 1), key(x, z - 1)};
+                for (long neighbour : neighbours) {
+                    if (sections.contains(neighbour) && seen.add(neighbour)) {
+                        queue.add(neighbour);
                     }
                 }
             }
@@ -207,16 +205,18 @@ final class OutlineSpec {
             }
         }
 
-        // P5: each outline fills exactly one 8-connected component of the input, i.e. the sections filled by each
-        //     outline are 8-connected and there are as many outlines as components.
+        // P5: each outline fills exactly one 4-connected component of the input (sections sharing an edge), i.e. the
+        //     sections filled by each outline are 4-connected and there are as many outlines as components. Sections that
+        //     touch only at a corner belong to different outlines, so no ring of one outline touches another ring of the
+        //     same outline in a way BlueMap triangulates incorrectly (see FV-001).
         for (int o = 0; o < filled.size(); o++) {
-            if (!isEightConnected(filled.get(o))) {
-                return Optional.of("sections filled by outline " + o + " are not 8-connected");
+            if (!isFourConnected(filled.get(o))) {
+                return Optional.of("sections filled by outline " + o + " are not 4-connected");
             }
         }
-        int components = countEightConnectedComponents(sections);
+        int components = countFourConnectedComponents(sections);
         if (components != outlines.size()) {
-            return Optional.of("expected one outline per 8-connected component (" + components + ") but got " + outlines.size());
+            return Optional.of("expected one outline per 4-connected component (" + components + ") but got " + outlines.size());
         }
 
         // P8: no line is drawn anywhere but on the boundary of the sections. Splitting every edge of every ring into
