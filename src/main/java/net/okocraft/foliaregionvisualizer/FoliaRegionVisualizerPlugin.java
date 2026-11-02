@@ -1,21 +1,24 @@
 package net.okocraft.foliaregionvisualizer;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
-import de.bluecolored.bluemap.api.math.Color;
-import net.okocraft.foliaregionvisualizer.visualizer.CachingVisualizer;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 public class FoliaRegionVisualizerPlugin extends JavaPlugin {
 
-    private VisualizerService service;
-    private final AtomicBoolean enabled = new AtomicBoolean();
+    // BlueMap calls these on every (re)load of BlueMap, possibly off the server thread.
+    private final Consumer<BlueMapAPI> onBlueMapEnable = this::start;
+    private final Consumer<BlueMapAPI> onBlueMapDisable = api -> stop(false);
+
+    // Guarded by this.
+    private @Nullable VisualizerService service;
+    private @Nullable ScheduledTask updateTask;
 
     @Override
     public void onLoad() {
@@ -25,56 +28,46 @@ public class FoliaRegionVisualizerPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        BlueMapAPI.onEnable(this::onBlueMapEnabled);
-        BlueMapAPI.onDisable(this::onBlueMapDisabled);
+        BlueMapAPI.onEnable(this.onBlueMapEnable);
+        BlueMapAPI.onDisable(this.onBlueMapDisable);
     }
 
     @Override
     public void onDisable() {
-        this.enabled.set(false);
-        this.service.clear();
-        getServer().getAsyncScheduler().cancelTasks(this);
+        BlueMapAPI.unregisterListener(this.onBlueMapEnable);
+        BlueMapAPI.unregisterListener(this.onBlueMapDisable);
+        stop(true);
     }
 
-    private void onBlueMapEnabled(@NotNull BlueMapAPI api) {
-        this.service = new VisualizerService(
-                api,
-                getConfig().getString("markerset-name", "Folia Regions"),
-                getConfig().getBoolean("default-hidden", true),
-                Set.copyOf(getConfig().getStringList("disabled-maps")),
-                getConfig().getString("detail-format", "region-%region_id%"),
-                readSpawnColor(),
-                readRenderType()
+    private synchronized void start(@NotNull BlueMapAPI api) {
+        // BlueMap may be enabled again without a disable call in between; never leave a second task running.
+        stop(false);
+
+        VisualizerService service = new VisualizerService(api, VisualizerSettings.load(getConfig()));
+        this.service = service;
+        this.updateTask = getServer().getAsyncScheduler().runAtFixedRate(
+                this,
+                task -> List.copyOf(getServer().getWorlds()).forEach(service::update),
+                5, 5, TimeUnit.SECONDS
         );
+    }
 
-        this.enabled.set(true);
+    /**
+     * Stops updating the markers. Idempotent.
+     *
+     * @param removeMarkers whether to remove the marker sets from BlueMap (not needed when BlueMap itself is stopping)
+     */
+    private synchronized void stop(boolean removeMarkers) {
+        if (this.updateTask != null) {
+            this.updateTask.cancel();
+            this.updateTask = null;
+        }
 
-        getServer().getAsyncScheduler().runAtFixedRate(this, task -> {
-            if (!this.enabled.get()) {
-                task.cancel();
+        if (this.service != null) {
+            if (removeMarkers) {
+                this.service.clear();
             }
-
-            List.copyOf(getServer().getWorlds()).forEach(this.service::update);
-        }, 5, 5, TimeUnit.SECONDS);
-    }
-
-    private void onBlueMapDisabled(@NotNull BlueMapAPI api) {
-        this.enabled.set(false);
-    }
-
-    private Color readSpawnColor() {
-        Pattern rgbaRegex = Pattern.compile("[0-9a-f]{8}");
-        String rgb = getConfig().getString("spawn-color", "");
-        return rgbaRegex.matcher(rgb).matches() ? new Color("#" + rgb) : new Color("#1e90ff1a");
-    }
-
-    private CachingVisualizer.RenderType readRenderType() {
-        String value = getConfig().getString("render-type", "");
-
-        if (value.equalsIgnoreCase("grid")) {
-            return CachingVisualizer.RenderType.GRIDS;
-        } else {
-            return CachingVisualizer.RenderType.OUTLINES;
+            this.service = null;
         }
     }
 }
