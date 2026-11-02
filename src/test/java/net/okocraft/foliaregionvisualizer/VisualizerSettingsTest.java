@@ -1,7 +1,7 @@
 package net.okocraft.foliaregionvisualizer;
 
 import de.bluecolored.bluemap.api.math.Color;
-import net.okocraft.foliaregionvisualizer.visualizer.RenderType;
+import net.okocraft.foliaregionvisualizer.visualizer.CachingVisualizer.RenderType;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;

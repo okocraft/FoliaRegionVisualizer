@@ -16,16 +16,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 
-/**
- * A snapshot of a Folia region.
- *
- * @param spawn       whether the region contains the world spawn
- * @param shift       the shift to convert section coordinates to block coordinates
- * @param sectionKeys the keys of the region's sections
- * @param mspt        the average milliseconds per tick of the last minute, or 0 if unknown
- * @param players     the number of players in the region
- */
-public record RegionInfo(boolean spawn, int shift, @NotNull LongSet sectionKeys, double mspt, int players) {
+public class RegionInfo {
 
     private static final VarHandle SECTION_BY_KEY_HANDLE;
 
@@ -83,5 +74,40 @@ public record RegionInfo(boolean spawn, int shift, @NotNull LongSet sectionKeys,
         }
 
         return new RegionInfo(isSpawn, shift, new LongOpenHashSet(sections.keySet()), mspt, players);
+    }
+
+    private final boolean isSpawn;
+    private final int shift;
+    private final LongSet regionSectionKeys;
+    private final double mspt;
+    private final int players;
+
+    private RegionInfo(boolean isSpawn, int shift, @NotNull LongSet regionSectionKeys,
+                       double mspt, int players) {
+        this.isSpawn = isSpawn;
+        this.shift = shift;
+        this.regionSectionKeys = regionSectionKeys;
+        this.mspt = mspt;
+        this.players = players;
+    }
+
+    public boolean isSpawn() {
+        return isSpawn;
+    }
+
+    public int getShift() {
+        return shift;
+    }
+
+    public LongSet getRegionSectionKeys() {
+        return regionSectionKeys;
+    }
+
+    public double getMspt() {
+        return this.mspt;
+    }
+
+    public int getPlayers() {
+        return this.players;
     }
 }

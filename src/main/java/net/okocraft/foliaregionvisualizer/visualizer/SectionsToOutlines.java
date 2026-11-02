@@ -43,11 +43,11 @@ final class SectionsToOutlines {
      * @return the outlines, or an empty list if {@code sections} is empty
      */
     static List<Outline> merge(LongSet sections, int shift) {
-        List<Component> components = splitIntoConnectedComponents(sections);
+        List<LongSet> components = splitIntoConnectedComponents(sections);
         List<Outline> result = new ArrayList<>(components.size());
 
-        for (Component component : components) {
-            result.add(outline(component.sections(), shift));
+        for (LongSet component : components) {
+            result.add(outline(component, shift));
         }
 
         return result;
@@ -62,10 +62,7 @@ final class SectionsToOutlines {
     record Outline(Vector2d[] shape, List<Vector2d[]> holes) {
     }
 
-    /**
-     * Splits the sections into 4-connected components, ordered by their smallest section (X first, then Z).
-     */
-    private static List<Component> splitIntoConnectedComponents(LongSet sections) {
+    private static List<LongSet> splitIntoConnectedComponents(LongSet sections) {
         // One pass over the sections with a single iterator: creating an iterator per component would scan the hash
         // table again each time and make many small components quadratic.
         LongSet visited = new LongOpenHashSet(sections.size());
@@ -107,7 +104,12 @@ final class SectionsToOutlines {
         }
 
         components.sort(Comparator.comparingInt(Component::minX).thenComparingInt(Component::minZ));
-        return components;
+
+        List<LongSet> result = new ArrayList<>(components.size());
+        for (Component component : components) {
+            result.add(component.sections());
+        }
+        return result;
     }
 
     private record Component(LongSet sections, int minX, int minZ) {
