@@ -1,7 +1,7 @@
 [versions]
 
 bluemap = "2.8.0"
-folia = "26.2.build.7-beta"
+folia = "26.3.build.21-stable"
 
 # testing tool
 junit = "6.1.3"
